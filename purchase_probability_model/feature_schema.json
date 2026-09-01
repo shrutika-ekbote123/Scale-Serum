@@ -1,0 +1,132 @@
+{
+  "feature_version": "V1",
+  "features": [
+    "f_seniority",
+    "f_email_class",
+    "f_locale",
+    "f_company_len",
+    "f_company_is_placeholder",
+    "f_hour_sin",
+    "f_hour_cos"
+  ],
+  "categorical": [
+    "f_seniority",
+    "f_email_class",
+    "f_locale"
+  ],
+  "numeric_scaled": [
+    "f_company_len"
+  ],
+  "passthrough": [
+    "f_company_is_placeholder",
+    "f_hour_sin",
+    "f_hour_cos"
+  ],
+  "reference_levels": {
+    "f_seniority": "individual_contributor",
+    "f_email_class": "gmail",
+    "f_locale": "en-IN"
+  },
+  "design_columns": [
+    "f_seniority_founder_c_level",
+    "f_seniority_manager",
+    "f_seniority_other",
+    "f_seniority_vp_director",
+    "f_email_class_corporate",
+    "f_email_class_other_freemail",
+    "f_locale_en",
+    "f_locale_en-GB",
+    "f_locale_en-US",
+    "f_locale_other",
+    "f_company_len",
+    "f_company_is_placeholder",
+    "f_hour_sin",
+    "f_hour_cos"
+  ],
+  "design_column_to_feature": {
+    "f_seniority_founder_c_level": "f_seniority",
+    "f_seniority_manager": "f_seniority",
+    "f_seniority_other": "f_seniority",
+    "f_seniority_vp_director": "f_seniority",
+    "f_email_class_corporate": "f_email_class",
+    "f_email_class_other_freemail": "f_email_class",
+    "f_locale_en": "f_locale",
+    "f_locale_en-GB": "f_locale",
+    "f_locale_en-US": "f_locale",
+    "f_locale_other": "f_locale",
+    "f_company_len": "f_company_len",
+    "f_company_is_placeholder": "f_company_is_placeholder",
+    "f_hour_sin": "f_hour_sin",
+    "f_hour_cos": "f_hour_cos"
+  },
+  "coefficients": {
+    "f_seniority_founder_c_level": 0.42161742601392177,
+    "f_seniority_manager": -0.020101437995431695,
+    "f_seniority_other": -0.20631881506650956,
+    "f_seniority_vp_director": 0.47959436125959376,
+    "f_email_class_corporate": 0.5545134855472387,
+    "f_email_class_other_freemail": 0.6688855366828852,
+    "f_locale_en": 0.9655920496465639,
+    "f_locale_en-GB": 0.043797312976479964,
+    "f_locale_en-US": 0.5005858686329469,
+    "f_locale_other": 0.6563575724164077,
+    "f_company_len": 0.11172605105529976,
+    "f_company_is_placeholder": -0.5096637780252504,
+    "f_hour_sin": 0.12064429426747564,
+    "f_hour_cos": -0.3526963408392399
+  },
+  "intercept": -5.260168187201378,
+  "constants": {
+    "company_len_p99_clip": 46.0,
+    "admission_tolerance_seconds": 3600,
+    "anchor": "leads.created_at",
+    "horizon_days": 21
+  },
+  "seniority_regex": {
+    "other_student": "(student|intern|fresher|trainee|unemployed)",
+    "founder_c_level": "(chief|founder|owner|proprietor|partner|president|chairman|^c[a-z]o$)",
+    "vp_director": "(vice president|avp|head of|director)",
+    "manager": "(manager|lead|principal|senior|sr\\.)"
+  },
+  "seniority_regex_note": "Python-dialect equivalents of the training SQL. PostgreSQL ARE treats \\b as backspace, so the original '^vp\\b' and '^head\\b' alternatives were inert; they are omitted here to preserve exact parity with the frozen model.",
+  "email_regex": {
+    "gmail": "@(gmail|googlemail)\\.",
+    "other_freemail": "@(yahoo|ymail|rediffmail|hotmail|outlook|live|aol|icloud|proton)\\."
+  },
+  "locale_keep": [
+    "en-IN",
+    "en",
+    "en-US",
+    "en-GB"
+  ],
+  "company_placeholder_values": [
+    "",
+    "na",
+    "n/a",
+    "n.a",
+    "n.a.",
+    "no",
+    "none",
+    "nil",
+    "nill",
+    "nan",
+    "self",
+    "self employed",
+    "selfemployed",
+    "self-employed",
+    "freelancer",
+    "free lancer",
+    "-",
+    "--",
+    ".",
+    "..."
+  ],
+  "labels": {
+    "f_seniority": "Senior decision-maker role",
+    "f_email_class": "Email address type",
+    "f_locale": "Lead locale",
+    "f_company_len": "Company information detail",
+    "f_company_is_placeholder": "Company information quality",
+    "f_hour_time_pattern": "Submission time pattern"
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "model_name": "purchase_probability",
+  "model_status": "baseline_mvp",
+  "version": "baseline_mvp",
+  "description": "Baseline/model MVP trained on currently available real data. Not yet production-optimized due to limited behavioural data and temporal instability.",
+  "feature_version": "V1",
+  "estimator": {
+    "class": "sklearn.linear_model.LogisticRegression",
+    "C": 1.0,
+    "solver": "lbfgs",
+    "max_iter": 2000,
+    "class_weight": null,
+    "penalty": "l2 (default)",
+    "random_state": 42
+  },
+  "training": {
+    "snapshot_sql": "final_trainset_v3.sql",
+    "snapshot_pinned_at": "2026-08-31T00:00:00+00:00",
+    "dataset_rows": 14692,
+    "dataset_positives": 160,
+    "train_rows": 11753,
+    "train_positives": 135,
+    "train_t0_min": "2026-06-01 00:02:26.573000+00:00",
+    "train_t0_max": "2026-07-24 11:20:15.515000+00:00",
+    "oof_rows": 8445,
+    "oof_positives": 100,
+    "split_boundary": "2026-07-24 11:29:51.284000+00:00",
+    "test_rows_excluded": 2939,
+    "test_positives_excluded": 25
+  },
+  "benchmark_metrics_frozen_v1": {
+    "pooled_oof_pr_auc": 0.01943,
+    "pooled_oof_roc_auc": 0.60934,
+    "pooled_oof_lift_at_10pct": 2.1,
+    "lift_at_10pct_ci": [
+      1.3,
+      2.9
+    ],
+    "no_skill_pr_auc": 0.011841326228537596,
+    "honest_nested_calibration_ece": 0.0046,
+    "honest_nested_calibration_slope": 0.69
+  },
+  "reproduction_check": {
+    "pr_auc": 0.019433004536269304,
+    "roc_auc": 0.6093445176752547,
+    "exact": true
+  },
+  "calibration": {
+    "method": "Platt (sigmoid) on log-odds",
+    "fitted_on": "pooled out-of-fold predictions (TRAIN only)",
+    "intercept": -2.1841580997848618,
+    "slope": 0.49087070052799536,
+    "test_used": false
+  },
+  "known_limitations": [
+    "Signal is stronger in June and weakens in July (fold 4 ROC-AUC 0.475).",
+    "Honest calibration slope 0.69 - probabilities remain over-dispersed.",
+    "Behavioural data unavailable: tracking_events has 0 rows.",
+    "Trained on website-channel Wix-form leads; other acquisition paths are out of scope.",
+    "Absolute probabilities are low (base rate 1.09%); use the ranking signal for prioritisation."
+  ],
+  "test_set_usage": "NONE. TEST was split off and deleted before any fit, calibration or percentile reference.",
+  "experiment_2_status": "Evaluated experimentally, directionally positive, NOT promoted to production.",
+  "random_seed": 42,
+  "created_at": "2026-09-01T05:05:55.850256+00:00",
+  "sklearn_version": "1.9.0"
+}

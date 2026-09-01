@@ -1,0 +1,1227 @@
+This audit needs per-fold lift and a proper calibration-leakage quantification, neither of which is in the saved artefacts. I'll regenerate OOF predictions only — deterministic, same seed — and deliberately not re-score TEST, so no third opening.
+
+Write C:\Users\User\AppData\Local\Temp\claude\c--Marketing-tool\b47654c4-a47c-42ec-9196-3fcd06976a64\scratchpad\audit_v1.py
+351 lines
+"""
+Baseline V1 — read-only robustness audit.
+
+Hard rules honoured here:
+  * TEST IS NEVER SCORED. It is split off and its labels are used only for
+    prevalence reporting (a published figure). No model ever calls predict on it.
+  * PostgreSQL connection is read-only. No DDL/DML.
+  * No baseline artefact is modified. Nothing is written except audit output.
+  * OOF predictions are REGENERATED (deterministic, seed 42, identical code path)
+    because per-fold lift and calibration diagnostics were not persisted.
+"""
+from __future__ import annotations
+
+import json, os, warnings
+from collections import defaultdict
+
+import numpy as np
+import pandas as pd
+import psycopg
+from dotenv import load_dotenv
+from sklearn.compose import ColumnTransformer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (average_precision_score, brier_score_loss, log_loss,
+                             roc_auc_score)
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
+warnings.filterwarnings("ignore")
+
+S = os.path.dirname(os.path.abspath(__file__))
+RANDOM_STATE = 42
+SPLIT_BOUNDARY = pd.Timestamp("2026-07-24 11:29:51.284", tz="UTC")
+CATEGORICAL = ["f_seniority", "f_email_class", "f_locale"]
+NUMERIC = ["f_company_len"]
+PASS = ["f_company_is_placeholder", "f_hour_sin", "f_hour_cos"]
+FEATURES = CATEGORICAL + NUMERIC + PASS
+TARGET = "y_purchase_21d"
+REF = {"f_seniority": "individual_contributor", "f_email_class": "gmail", "f_locale": "en-IN"}
+FOLDS = [(1, ("2026-06-01", "2026-06-14"), ("2026-06-15", "2026-06-24")),
+         (2, ("2026-06-01", "2026-06-24"), ("2026-06-25", "2026-07-04")),
+         (3, ("2026-06-01", "2026-07-04"), ("2026-07-05", "2026-07-14")),
+         (4, ("2026-06-01", "2026-07-14"), ("2026-07-15", "2026-07-24"))]
+
+OUT = []
+def log(m=""):
+    print(m); OUT.append(m)
+def rule(t):
+    log("\n" + "=" * 78); log(t); log("=" * 78)
+
+
+def make_pipe(C=1.0, cw=None, feats=None):
+    feats = feats or FEATURES
+    cats = [c for c in CATEGORICAL if c in feats]
+    nums = [c for c in NUMERIC if c in feats]
+    raws = [c for c in PASS if c in feats]
+    tr = []
+    if cats:
+        tr.append(("cat", OneHotEncoder(drop=[REF[c] for c in cats],
+                                        handle_unknown="ignore", sparse_output=False), cats))
+    if nums:
+        tr.append(("num", StandardScaler(), nums))
+    if raws:
+        tr.append(("raw", "passthrough", raws))
+    pre = ColumnTransformer(tr, remainder="drop", verbose_feature_names_out=False)
+    return Pipeline([("pre", pre),
+                     ("clf", LogisticRegression(C=C, solver="lbfgs", max_iter=2000,
+                                                class_weight=cw, random_state=RANDOM_STATE))])
+
+
+def topk(y, p, k):
+    kn = int(round(len(y) * k))
+    sel = np.argsort(-p, kind="stable")[:kn]
+    hits = int(y[sel].sum()); prev = y.mean()
+    prec = hits / kn if kn else np.nan
+    return prec, hits / y.sum() if y.sum() else np.nan, (prec / prev if prev else np.nan), kn, hits
+
+
+def ece(y, p, bins=10):
+    q = pd.qcut(pd.Series(p), bins, duplicates="drop", labels=False)
+    t = (pd.DataFrame({"b": q, "p": p, "y": y}).groupby("b", observed=True)
+         .agg(n=("y", "size"), mp=("p", "mean"), obs=("y", "mean")))
+    return float((t["n"] / t["n"].sum() * (t["mp"] - t["obs"]).abs()).sum())
+
+
+def cal_slope_int(y, p):
+    e = 1e-15
+    lp = np.log(np.clip(p, e, 1 - e) / np.clip(1 - p, e, 1 - e))
+    m = LogisticRegression(C=np.inf, solver="lbfgs", max_iter=2000).fit(lp.reshape(-1, 1), y)
+    return float(m.intercept_[0]), float(m.coef_[0][0])
+
+
+# ------------------------------------------------------------------ load
+load_dotenv(r"c:\Marketing_tool\.env")
+sql = open(os.path.join(S, "final_trainset_v3.sql"), encoding="utf-8").read().rstrip().rstrip(";")
+conn = psycopg.connect(host=os.environ["DB_HOST"], port=5432, dbname=os.environ["DB_NAME"],
+                       user=os.environ["DB_USER"], password=os.environ["DB_PASSWORD"], connect_timeout=20)
+conn.read_only = True
+with conn.cursor() as cur:
+    cur.execute(sql)
+    df = pd.DataFrame(cur.fetchall(), columns=[d[0] for d in cur.description])
+conn.close()
+
+df["t0"] = pd.to_datetime(df["t0"], utc=True)
+for c in NUMERIC + PASS:
+    df[c] = pd.to_numeric(df[c])
+df[TARGET] = df[TARGET].astype(int)
+df["_l"] = df["lead_id"].astype(str)
+df = df.sort_values(["t0", "_l"], kind="mergesort").reset_index(drop=True)
+
+train = df[df["t0"] < SPLIT_BOUNDARY].copy()
+test = df[df["t0"] >= SPLIT_BOUNDARY].copy()
+TEST_N, TEST_POS = len(test), int(test[TARGET].sum())
+del test                                    # TEST IS NOW GONE. It is never scored.
+
+y = train[TARGET].values
+X = train[FEATURES]
+tdate = train["t0"].dt.tz_convert("UTC").dt.date
+fold_masks = []
+for n, tr, va in FOLDS:
+    trm = ((tdate >= pd.Timestamp(tr[0]).date()) & (tdate <= pd.Timestamp(tr[1]).date())).values
+    vam = ((tdate >= pd.Timestamp(va[0]).date()) & (tdate <= pd.Timestamp(va[1]).date())).values
+    fold_masks.append((n, trm, vam, va))
+
+rule("0. SCOPE")
+log(f"  V3 rows={len(df)}  positives={int(df[TARGET].sum())}  rate={100*df[TARGET].mean():.4f}%")
+log(f"  TRAIN rows={len(train)}  positives={int(y.sum())}  rate={100*y.mean():.4f}%")
+log(f"  TEST  rows={TEST_N}  positives={TEST_POS}  rate={100*TEST_POS/TEST_N:.4f}%  "
+    f"<- SPLIT OFF AND DISCARDED; never scored in this audit")
+
+
+def gen_oof(C, cw):
+    oof = np.full(len(train), np.nan)
+    for n, trm, vam, _ in fold_masks:
+        p = make_pipe(C, cw).fit(X[trm], y[trm]).predict_proba(X[vam])[:, 1]
+        oof[vam] = p
+    return oof
+
+
+VARIANTS = {"A_C1.0": (1.0, None), "A_C0.1": (0.1, None),
+            "B_C1.0": (1.0, "balanced"), "B_C0.1": (0.1, "balanced")}
+oofs = {k: gen_oof(*v) for k, v in VARIANTS.items()}
+mask = ~np.isnan(oofs["A_C1.0"])
+y_oof = y[mask]
+p_sel = oofs["A_C1.0"][mask]
+
+rule("REPRODUCIBILITY CHECK vs the baseline run")
+log(f"  pooled OOF n={mask.sum()}  positives={int(y_oof.sum())}  "
+    f"prevalence={100*y_oof.mean():.4f}%")
+for k in VARIANTS:
+    pk = oofs[k][mask]
+    log(f"  {k:8s} PR-AUC={average_precision_score(y_oof, pk):.5f}  "
+        f"ROC-AUC={roc_auc_score(y_oof, pk):.5f}")
+log("  (baseline reported A_C1.0 PR-AUC 0.01943 / ROC 0.60934 — must match exactly)")
+
+# ================================================================ 3. TEMPORAL
+rule("3. TEMPORAL ROBUSTNESS — per fold, selected model A_C1.0")
+rows = []
+log(f"  {'fold':5s} {'val rows':>9s} {'pos':>5s} {'prev':>8s} {'PR-AUC':>9s} {'no-skill':>9s} "
+    f"{'PR lift':>8s} {'ROC-AUC':>9s} {'lift@5%':>8s} {'lift@10%':>9s}")
+for n, trm, vam, va in fold_masks:
+    yv, pv = y[vam], oofs["A_C1.0"][vam]
+    pr = average_precision_score(yv, pv); rc = roc_auc_score(yv, pv)
+    _, _, l5, k5, h5 = topk(yv, pv, 0.05)
+    _, _, l10, k10, h10 = topk(yv, pv, 0.10)
+    rows.append(dict(fold=n, rows=int(vam.sum()), pos=int(yv.sum()), prev=float(yv.mean()),
+                     pr_auc=pr, roc_auc=rc, lift5=l5, lift10=l10,
+                     k5=k5, h5=h5, k10=k10, h10=h10, span=f"{va[0]}..{va[1]}"))
+    log(f"  {n:<5d} {int(vam.sum()):9d} {int(yv.sum()):5d} {100*yv.mean():7.3f}% "
+        f"{pr:9.5f} {yv.mean():9.5f} {pr/yv.mean():8.2f} {rc:9.5f} {l5:8.2f} {l10:9.2f}")
+
+fr = pd.DataFrame(rows)
+log(f"\n  {'metric':12s} {'mean':>9s} {'median':>9s} {'sd':>9s} {'CV':>8s} {'min':>9s} {'max':>9s}")
+for m in ("pr_auc", "roc_auc", "lift5", "lift10", "prev"):
+    v = fr[m].values
+    cv = v.std(ddof=1) / v.mean() if v.mean() else np.nan
+    log(f"  {m:12s} {v.mean():9.5f} {np.median(v):9.5f} {v.std(ddof=1):9.5f} "
+        f"{cv:8.3f} {v.min():9.5f} {v.max():9.5f}")
+
+log("\n  fold-level top-K composition (how few leads decide each lift number):")
+for r in rows:
+    log(f"    fold {r['fold']}: top5% = {r['h5']}/{r['k5']} hits   "
+        f"top10% = {r['h10']}/{r['k10']} hits   (fold has {r['pos']} positives)")
+
+log("\n  binomial sanity: expected hits in top 10% under NO skill, and P(>= observed)")
+from scipy import stats
+for r in rows:
+    exp = r["k10"] * r["prev"]
+    pval = stats.binom.sf(r["h10"] - 1, r["k10"], r["prev"])
+    log(f"    fold {r['fold']}: observed {r['h10']}, expected {exp:.2f} under no skill, "
+        f"one-sided p = {pval:.4f}")
+
+# ================================================================ 2. CALIBRATION LEAKAGE
+rule("2. CALIBRATION LEAKAGE AUDIT")
+e = 1e-15
+def platt_fit(p, yy):
+    lp = np.log(np.clip(p, e, 1 - e) / np.clip(1 - p, e, 1 - e))
+    return LogisticRegression(C=np.inf, solver="lbfgs", max_iter=2000).fit(lp.reshape(-1, 1), yy)
+def platt_apply(m, p):
+    lp = np.log(np.clip(p, e, 1 - e) / np.clip(1 - p, e, 1 - e))
+    return m.predict_proba(lp.reshape(-1, 1))[:, 1]
+
+log("  (a) CURRENT procedure: Platt fitted on pooled OOF, evaluated on the SAME pooled OOF")
+m_in = platt_fit(p_sel, y_oof)
+p_in = platt_apply(m_in, p_sel)
+i0, s0 = cal_slope_int(y_oof, p_in)
+log(f"      log loss={log_loss(y_oof, p_in):.6f}  brier={brier_score_loss(y_oof, p_in):.7f}  "
+    f"ECE={ece(y_oof, p_in):.6f}  slope={s0:.4f}")
+
+log("\n  (b) HONEST procedure: nested calibration. Inside each outer fold's training window,")
+log("      the last 25% by time becomes a calibration block the model never trained on.")
+log("      Platt is fitted there, then applied to the outer validation block.")
+p_nested = np.full(len(train), np.nan)
+for n, trm, vam, va in fold_masks:
+    idx = np.flatnonzero(trm)
+    cut = int(len(idx) * 0.75)
+    fit_i, cal_i = idx[:cut], idx[cut:]
+    if y[cal_i].sum() < 3:
+        log(f"      fold {n}: calibration block has only {int(y[cal_i].sum())} positives — skipped")
+        continue
+    mdl = make_pipe(1.0, None).fit(X.iloc[fit_i], y[fit_i])
+    pc = mdl.predict_proba(X.iloc[cal_i])[:, 1]
+    cal = platt_fit(pc, y[cal_i])
+    pv = mdl.predict_proba(X.iloc[vam])[:, 1]
+    p_nested[vam] = platt_apply(cal, pv)
+    log(f"      fold {n}: model fit on {len(fit_i)} rows ({int(y[fit_i].sum())} pos), "
+        f"Platt on {len(cal_i)} rows ({int(y[cal_i].sum())} pos), applied to {int(vam.sum())} val rows")
+
+nm = ~np.isnan(p_nested)
+yn, pn = y[nm], p_nested[nm]
+i1, s1 = cal_slope_int(yn, pn)
+log(f"\n      nested-calibrated pooled: n={nm.sum()} pos={int(yn.sum())}")
+log(f"      log loss={log_loss(yn, pn):.6f}  brier={brier_score_loss(yn, pn):.7f}  "
+    f"ECE={ece(yn, pn):.6f}  slope={s1:.4f}")
+log(f"      PR-AUC of the nested model = {average_precision_score(yn, pn):.5f} "
+    f"(ranking differs: models are fit on 75% of each window)")
+
+log(f"\n  OPTIMISM ESTIMATE (in-sample vs honest, same metric family):")
+log(f"      ECE      {ece(y_oof, p_in):.6f}  ->  {ece(yn, pn):.6f}   "
+    f"({ece(yn, pn) - ece(y_oof, p_in):+.6f})")
+log(f"      log loss {log_loss(y_oof, p_in):.6f}  ->  {log_loss(yn, pn):.6f}   "
+    f"({log_loss(yn, pn) - log_loss(y_oof, p_in):+.6f})")
+log(f"      slope    {s0:.4f}  ->  {s1:.4f}")
+
+log("\n  degrees of freedom consumed by Platt: 2 (intercept + slope), fitted on "
+    f"{int(y_oof.sum())} positives.")
+
+# ================================================================ 8. SELECTION
+rule("8. MODEL SELECTION ROBUSTNESS — paired bootstrap on identical OOF rows")
+rng = np.random.default_rng(RANDOM_STATE)
+pos_i = np.flatnonzero(y_oof == 1); neg_i = np.flatnonzero(y_oof == 0)
+B = 2000
+boot_idx = [np.concatenate([rng.choice(pos_i, len(pos_i), True),
+                            rng.choice(neg_i, len(neg_i), True)]) for _ in range(B)]
+base = {k: average_precision_score(y_oof, oofs[k][mask]) for k in VARIANTS}
+log(f"  {'variant':9s} {'PR-AUC':>9s} {'vs A_C1.0':>11s} {'P(better than A_C1.0)':>23s} {'95% CI of diff':>26s}")
+for k in VARIANTS:
+    if k == "A_C1.0":
+        log(f"  {k:9s} {base[k]:9.5f} {'—':>11s} {'—':>23s} {'—':>26s}"); continue
+    d = []
+    for b in boot_idx:
+        d.append(average_precision_score(y_oof[b], oofs[k][mask][b])
+                 - average_precision_score(y_oof[b], p_sel[b]))
+    d = np.array(d)
+    log(f"  {k:9s} {base[k]:9.5f} {base[k]-base['A_C1.0']:+11.5f} {(d > 0).mean():23.3f} "
+        f"{f'[{np.percentile(d,2.5):+.5f}, {np.percentile(d,97.5):+.5f}]':>26s}")
+
+# ================================================================ 9. FEATURES
+rule("9. FEATURE ROBUSTNESS (diagnostic only — nothing added or removed)")
+log("  (a) coefficient stability across the four fold models")
+coefs = defaultdict(list)
+for n, trm, vam, _ in fold_masks:
+    pm = make_pipe(1.0, None).fit(X[trm], y[trm])
+    for nmz, cf in zip(pm.named_steps["pre"].get_feature_names_out(),
+                       pm.named_steps["clf"].coef_[0]):
+        coefs[nmz].append(float(cf))
+log(f"  {'feature':36s} {'f1':>8s} {'f2':>8s} {'f3':>8s} {'f4':>8s} {'mean':>8s} {'sd':>7s} {'sign flips':>11s}")
+for k, v in coefs.items():
+    a = np.array(v)
+    flips = int((np.sign(a[:-1]) != np.sign(a[1:])).sum())
+    log(f"  {k:36s} " + " ".join(f"{x:8.3f}" for x in a) +
+        f" {a.mean():8.3f} {a.std(ddof=1):7.3f} {flips:11d}")
+
+log("\n  (b) drop-one-feature pooled OOF PR-AUC (contribution diagnostic)")
+full = average_precision_score(y_oof, p_sel)
+log(f"  {'removed':30s} {'PR-AUC':>9s} {'delta':>10s} {'ROC-AUC':>9s}")
+log(f"  {'(none — full model)':30s} {full:9.5f} {0.0:10.5f} {roc_auc_score(y_oof, p_sel):9.5f}")
+drop_rows = []
+for f in FEATURES:
+    sub = [c for c in FEATURES if c != f]
+    o = np.full(len(train), np.nan)
+    for n, trm, vam, _ in fold_masks:
+        o[vam] = make_pipe(1.0, None, sub).fit(X[trm][sub], y[trm]).predict_proba(X[vam][sub])[:, 1]
+    pr = average_precision_score(y_oof, o[mask]); rc = roc_auc_score(y_oof, o[mask])
+    drop_rows.append((f, pr, pr - full, rc))
+    log(f"  {f:30s} {pr:9.5f} {pr-full:+10.5f} {rc:9.5f}")
+log("  (negative delta = removing it HURTS = the feature contributes)")
+
+log("\n  (c) sparse-category exposure inside the ML matrix")
+for c in CATEGORICAL:
+    vc = train.groupby(c, observed=True)[TARGET].agg(["size", "sum"])
+    for lvl, r in vc.iterrows():
+        flag = "  <-- sparse" if r["size"] < 200 else ""
+        log(f"    {c}={str(lvl)[:26]:26s} train rows={int(r['size']):6d} pos={int(r['sum']):4d}"
+            f"  rate={100*r['sum']/r['size']:6.3f}%{flag}")
+
+# ================================================================ 6. DRIFT
+rule("6. BASE-RATE DRIFT")
+log(f"  TRAIN prevalence : {100*y.mean():.4f}%")
+log(f"  OOF   prevalence : {100*y_oof.mean():.4f}%")
+log(f"  TEST  prevalence : {100*TEST_POS/TEST_N:.4f}%  (published figure; TEST not scored here)")
+mth = df.assign(m=df["t0"].dt.strftime("%Y-%m")).groupby("m")[TARGET].agg(["size", "sum", "mean"])
+log(f"\n  {'month':9s} {'rows':>7s} {'pos':>5s} {'rate':>9s}")
+for i, r in mth.iterrows():
+    log(f"  {i:9s} {int(r['size']):7d} {int(r['sum']):5d} {100*r['mean']:8.3f}%")
+wk = df.assign(w=df["t0"].dt.to_period("W").dt.start_time.dt.strftime("%Y-%m-%d")).groupby("w")[TARGET].agg(["size", "sum", "mean"])
+log(f"\n  {'week':12s} {'rows':>7s} {'pos':>5s} {'rate':>9s}")
+for i, r in wk.iterrows():
+    log(f"  {i:12s} {int(r['size']):7d} {int(r['sum']):5d} {100*r['mean']:8.3f}%")
+w = wk["mean"].values
+log(f"\n  weekly rate: mean={100*w.mean():.4f}%  sd={100*w.std(ddof=1):.4f}%  "
+    f"CV={w.std(ddof=1)/w.mean():.3f}  min={100*w.min():.3f}%  max={100*w.max():.3f}%")
+ch = stats.chi2_contingency(np.array([mth["sum"].values, (mth["size"] - mth["sum"]).values]))
+log(f"  chi-square test of equal monthly rates: chi2={ch[0]:.3f}  df={ch[2]}  p={ch[1]:.5f}")
+
+# ================================================================ 7. POWER
+rule("7. STATISTICAL POWER")
+log("  Detectable difference in lift@10% between two models, given the number of positives")
+log("  in the evaluation block (normal approximation on the count of hits in the top decile):")
+for nm_, npos_, nrows_ in (("pooled OOF", int(y_oof.sum()), int(mask.sum())),
+                           ("TEST", TEST_POS, TEST_N)):
+    k10 = int(round(nrows_ * 0.10)); prev = npos_ / nrows_
+    exp_random = k10 * prev
+    se = np.sqrt(k10 * prev * (1 - prev))
+    log(f"    {nm_:12s} top-decile = {k10:5d} leads; expected hits under no skill "
+        f"{exp_random:5.2f}; SE {se:4.2f}")
+    log(f"    {'':12s} a 2x-lift model is {exp_random:.2f} -> {2*exp_random:.2f} hits, "
+        f"a {exp_random/se:.2f}-sigma move; two models differing by 0.5x lift differ by "
+        f"{0.5*exp_random/se:.2f} sigma")
+conn = None
+
+json.dump({"folds": rows,
+           "variant_pr_auc": base,
+           "drop_one": [{"removed": a, "pr_auc": b, "delta": c, "roc": d} for a, b, c, d in drop_rows],
+           "calibration": {"in_sample_ece": ece(y_oof, p_in), "nested_ece": ece(yn, pn),
+                           "in_sample_logloss": log_loss(y_oof, p_in),
+                           "nested_logloss": log_loss(yn, pn),
+                           "in_sample_slope": s0, "nested_slope": s1}},
+          open(os.path.join(S, "experiment_v1", "audit_findings.json"), "w"), indent=2, default=str)
+open(os.path.join(S, "experiment_v1", "audit_log.txt"), "w", encoding="utf-8").write("\n".join(OUT))
+log("\nAUDIT COMPLETE — TEST was never scored. No artefact modified. No DB writes.")
+PowerShell Run robustness audit
+IN
+$s = "C:\Users\User\AppData\Local\Temp\claude\c--Marketing-tool\b47654c4-a47c-42ec-9196-3fcd06976a64\scratchpad"
+.venv\Scripts\python.exe "$s\audit_v1.py" > "$s\audit_run.txt" 2>&1
+Write-Output "exit=$LASTEXITCODE lines=$((Get-Content "$s\audit_run.txt" | Measure-Object -Line).Lines)"
+Get-Content "$s\audit_run.txt" -TotalCount 62
+
+OUT
+exit=0 lines=144
+
+==============================================================================
+0. SCOPE
+==============================================================================
+  V3 rows=14692  positives=160  rate=1.0890%
+  TRAIN rows=11753  positives=135  rate=1.1486%
+  TEST  rows=2939  positives=25  rate=0.8506%  <- SPLIT OFF AND DISCARDED; never scored in this audit
+
+==============================================================================
+REPRODUCIBILITY CHECK vs the baseline run
+==============================================================================
+  pooled OOF n=8445  positives=100  prevalence=1.1841%
+  A_C1.0   PR-AUC=0.01943  ROC-AUC=0.60934
+  A_C0.1   PR-AUC=0.01839  ROC-AUC=0.58977
+  B_C1.0   PR-AUC=0.02214  ROC-AUC=0.60380
+  B_C0.1   PR-AUC=0.02065  ROC-AUC=0.60909
+  (baseline reported A_C1.0 PR-AUC 0.01943 / ROC 0.60934 — must match exactly)
+
+==============================================================================
+3. TEMPORAL ROBUSTNESS — per fold, selected model A_C1.0
+==============================================================================
+  fold   val rows   pos     prev    PR-AUC  no-skill  PR lift   ROC-AUC  lift@5%  lift@10%
+  1          2239    44   1.965%   0.03826   0.01965     1.95   0.64522     2.73      2.73
+  2          2045    24   1.174%   0.02342   0.01174     2.00   0.68282     2.51      2.51
+  3          1903    14   0.736%   0.01217   0.00736     1.65   0.64963     1.43      0.72
+  4          2258    18   0.797%   0.03598   0.00797     4.51   0.47468     1.11      1.67
+
+  metric            mean    median        sd       CV       min       max
+  pr_auc         0.02746   0.02970   0.01210    0.441   0.01217   0.03826
+  roc_auc        0.61309   0.64742   0.09379    0.153   0.47468   0.68282
+  lift5          1.94328   1.96848   0.79294    0.408   1.11013   2.72606
+  lift10         1.90320   2.08566   0.91435    0.480   0.71541   2.72606
+  prev           0.01168   0.00985   0.00566    0.484   0.00736   0.01965
+
+  fold-level top-K composition (how few leads decide each lift number):
+    fold 1: top5% = 6/112 hits   top10% = 12/224 hits   (fold has 44 positives)
+    fold 2: top5% = 3/102 hits   top10% = 6/204 hits   (fold has 24 positives)
+    fold 3: top5% = 1/95 hits   top10% = 1/190 hits   (fold has 14 positives)
+    fold 4: top5% = 1/113 hits   top10% = 3/226 hits   (fold has 18 positives)
+
+  binomial sanity: expected hits in top 10% under NO skill, and P(>= observed)
+    fold 1: observed 12, expected 4.40 under no skill, one-sided p = 0.0018
+    fold 2: observed 6, expected 2.39 under no skill, one-sided p = 0.0344
+    fold 3: observed 1, expected 1.40 under no skill, one-sided p = 0.7541
+    fold 4: observed 3, expected 1.80 under no skill, one-sided p = 0.2696
+
+==============================================================================
+2. CALIBRATION LEAKAGE AUDIT
+==============================================================================
+  (a) CURRENT procedure: Platt fitted on pooled OOF, evaluated on the SAME pooled OOF
+      log loss=0.063429  brier=0.0116776  ECE=0.001975  slope=0.9520
+
+  (b) HONEST procedure: nested calibration. Inside each outer fold's training window,
+      the last 25% by time becomes a calibration block the model never trained on.
+      Platt is fitted there, then applied to the outer validation block.
+      fold 1: model fit on 2481 rows (21 pos), Platt on 827 rows (14 pos), applied to 2239 val rows
+      fold 2: model fit on 4160 rows (49 pos), Platt on 1387 rows (30 pos), applied to 2045 val rows
+      fold 3: model fit on 5694 rows (81 pos), Platt on 1898 rows (22 pos), applied to 1903 val rows
+      fold 4: model fit on 7121 rows (97 pos), Platt on 2374 rows (20 pos), applied to 2258 val rows
+
+      nested-calibrated pooled: n=8445 pos=100
+      log loss=0.063801  brier=0.0116937  ECE=0.004573  slope=0.6913
+Fold 4 has ROC-AUC 0.475 — below chance — while showing the highest PR-AUC. That's a significant finding. Reading the rest.
+
+PowerShell Read remaining audit sections
+IN
+$s = "C:\Users\User\AppData\Local\Temp\claude\c--Marketing-tool\b47654c4-a47c-42ec-9196-3fcd06976a64\scratchpad"
+$c = Get-Content "$s\audit_run.txt"
+$c[61..143]
+
+OUT
+      log loss=0.063801  brier=0.0116937  ECE=0.004573  slope=0.6913
+      PR-AUC of the nested model = 0.01884 (ranking differs: models are fit on 75% of each window)
+
+  OPTIMISM ESTIMATE (in-sample vs honest, same metric family):
+      ECE      0.001975  ->  0.004573   (+0.002598)
+      log loss 0.063429  ->  0.063801   (+0.000372)
+      slope    0.9520  ->  0.6913
+
+  degrees of freedom consumed by Platt: 2 (intercept + slope), fitted on 100 positives.
+
+==============================================================================
+8. MODEL SELECTION ROBUSTNESS — paired bootstrap on identical OOF rows
+==============================================================================
+  variant      PR-AUC   vs A_C1.0   P(better than A_C1.0)             95% CI of diff
+  A_C1.0      0.01943           —                       —                          —
+  A_C0.1      0.01839    -0.00104                   0.318       [-0.00408, +0.00885]
+  B_C1.0      0.02214    +0.00271                   0.867       [-0.00174, +0.01218]
+  B_C0.1      0.02065    +0.00122                   0.808       [-0.00138, +0.00489]
+
+==============================================================================
+9. FEATURE ROBUSTNESS (diagnostic only — nothing added or removed)
+==============================================================================
+  (a) coefficient stability across the four fold models
+  feature                                    f1       f2       f3       f4     mean      sd  sign flips
+  f_seniority_founder_c_level             0.455    0.459    0.268    0.385    0.392   0.089           0
+  f_seniority_manager                    -0.676   -0.106   -0.295   -0.212   -0.322   0.248           0
+  f_seniority_other                      -0.100   -0.147   -0.240   -0.226   -0.178   0.066           0
+  f_seniority_vp_director                 0.185    0.445    0.395    0.530    0.389   0.147           0
+  f_email_class_corporate                 0.654    0.770    0.761    0.607    0.698   0.080           0
+  f_email_class_other_freemail            0.824    0.837    0.771    0.771    0.801   0.035           0
+  f_locale_en                             0.754    0.908    0.987    1.026    0.919   0.120           0
+  f_locale_en-GB                         -0.070   -0.426   -0.224   -0.089   -0.202   0.164           0
+  f_locale_en-US                         -0.116    0.269    0.397    0.510    0.265   0.272           1
+  f_locale_other                          0.303    0.583    0.766    0.879    0.632   0.252           0
+  f_company_len                           0.132    0.011    0.071    0.094    0.077   0.051           0
+  f_company_is_placeholder               -0.621   -0.243   -0.355   -0.423   -0.410   0.159           0
+  f_hour_sin                             -0.073    0.285    0.231    0.191    0.158   0.159           1
+  f_hour_cos                             -0.837   -0.618   -0.577   -0.464   -0.624   0.156           0
+
+  (b) drop-one-feature pooled OOF PR-AUC (contribution diagnostic)
+  removed                           PR-AUC      delta   ROC-AUC
+  (none — full model)              0.01943    0.00000   0.60934
+  f_seniority                      0.01824   -0.00120   0.61029
+  f_email_class                    0.01922   -0.00022   0.58457
+  f_locale                         0.02298   +0.00355   0.56091
+  f_company_len                    0.01957   +0.00013   0.60919
+  f_company_is_placeholder         0.01947   +0.00003   0.61096
+  f_hour_sin                       0.01980   +0.00037   0.61321
+  f_hour_cos                       0.01959   +0.00016   0.61198
+  (negative delta = removing it HURTS = the feature contributes)
+
+  (c) sparse-category exposure inside the ML matrix
+    f_seniority=founder_c_level            train rows=  2148 pos=  34  rate= 1.583%
+    f_seniority=individual_contributor     train rows=  5098 pos=  45  rate= 0.883%
+    f_seniority=manager                    train rows=  2333 pos=  22  rate= 0.943%
+    f_seniority=other                      train rows=    60 pos=   0  rate= 0.000%  <-- sparse
+    f_seniority=vp_director                train rows=  2114 pos=  34  rate= 1.608%
+    f_email_class=corporate                  train rows=   904 pos=  17  rate= 1.881%
+    f_email_class=gmail                      train rows=  9442 pos=  89  rate= 0.943%
+    f_email_class=other_freemail             train rows=  1407 pos=  29  rate= 2.061%
+    f_locale=en                         train rows=  2532 pos=  53  rate= 2.093%
+    f_locale=en-GB                      train rows=  1838 pos=  14  rate= 0.762%
+    f_locale=en-IN                      train rows=  5207 pos=  39  rate= 0.749%
+    f_locale=en-US                      train rows=  1975 pos=  25  rate= 1.266%
+    f_locale=other                      train rows=   201 pos=   4  rate= 1.990%
+
+==============================================================================
+6. BASE-RATE DRIFT
+==============================================================================
+  TRAIN prevalence : 1.1486%
+  OOF   prevalence : 1.1841%
+  TEST  prevalence : 0.8506%  (published figure; TEST not scored here)
+
+  month        rows   pos      rate
+  2026-06      6723    93    1.383%
+  2026-07      6522    54    0.828%
+  2026-08      1447    13    0.898%
+
+  week            rows   pos      rate
+  2026-06-01      1667    18    1.080%
+  2026-06-08      1641    17    1.036%
+  2026-06-15      1577    29    1.839%
+  2026-06-22      1440    24    1.667%
+PowerShell Read drift and power tail
+IN
+$s = "C:\Users\User\AppData\Local\Temp\claude\c--Marketing-tool\b47654c4-a47c-42ec-9196-3fcd06976a64\scratchpad"
+Get-Content "$s\audit_run.txt" | Select-Object -Skip 143
+
+OUT
+  2026-06-22      1440    24    1.667%
+  2026-06-29      1477    17    1.151%
+  2026-07-06      1245     8    0.643%
+  2026-07-13      1814    14    0.772%
+  2026-07-20      1462    12    0.821%
+  2026-07-27      1209    10    0.827%
+  2026-08-03      1160    11    0.948%
+
+  weekly rate: mean=1.0783%  sd=0.3890%  CV=0.361  min=0.643%  max=1.839%
+  chi-square test of equal monthly rates: chi2=10.020  df=2  p=0.00667
+
+==============================================================================
+7. STATISTICAL POWER
+==============================================================================
+  Detectable difference in lift@10% between two models, given the number of positives
+  in the evaluation block (normal approximation on the count of hits in the top decile):
+    pooled OOF   top-decile =   844 leads; expected hits under no skill  9.99; SE 3.14
+                 a 2x-lift model is 9.99 -> 19.99 hits, a 3.18-sigma move; two models differing by 0.5x lift differ by 1.59 sigma
+    TEST         top-decile =   294 leads; expected hits under no skill  2.50; SE 1.57
+                 a 2x-lift model is 2.50 -> 5.00 hits, a 1.59-sigma move; two models differing by 0.5x lift differ by 0.79 sigma
+
+AUDIT COMPLETE — TEST was never scored. No artefact modified. No DB writes.
+Audit complete. Several findings materially qualify the baseline report. Writing it up.
+
+Write C:\Users\User\AppData\Local\Temp\claude\c--Marketing-tool\b47654c4-a47c-42ec-9196-3fcd06976a64\scratchpad\purchase_probability_baseline_v1_robustness_audit.md
+623 lines
+# Baseline V1 — Methodology and Robustness Audit
+
+**Scope:** read-only audit of Purchase Probability Baseline V1.
+**Method:** OOF predictions regenerated deterministically (seed 42, identical code path) because
+per-fold lift and calibration diagnostics were not persisted. **TEST was split off and discarded
+without ever being scored** — no third opening occurred. No baseline artefact, SQL file, spec or
+database object was modified. No model was trained beyond regenerating the four existing fold models.
+
+**Reproduction check — exact:** pooled OOF n = 8,445, positives = 100, A_C1.0 PR-AUC = **0.01943**,
+ROC-AUC = **0.60934**. Matches the baseline report to five decimals, so every finding below applies
+to the same fitted models the report describes.
+
+---
+
+## 1. Test contamination audit
+
+I audited the chronology from the code and run logs rather than accepting the report's conclusion.
+
+### Chronology established
+
+| Step | Event | TEST scored? |
+|---|---|---|
+| 1 | Script written with `OneHotEncoder(drop="first")` | — |
+| 2 | `--stage oof` run; selection logic found to contradict spec §4.2; selection code fixed | No |
+| 3 | Full run 1 → **TEST PR-AUC 0.03034** | **Yes (1st)** |
+| 4 | Reading the §12 coefficient table, feature names revealed the true references were `founder_c_level` / `corporate` / `en` — alphabetical, not the most-frequent levels spec §2 mandates | — |
+| 5 | Encoder corrected to `drop=[most-frequent per column]` | — |
+| 6 | Full run 2 → **TEST PR-AUC 0.03706** | **Yes (2nd)** |
+
+### A. Was any TEST result used to select features, hyperparameters, class weighting, calibration, threshold, or model variant?
+
+**No, on every count — verified against the code, not the narrative.**
+
+| Decision | Fixed by | When |
+|---|---|---|
+| Feature set (7) | spec §1, hard-asserted in `guard_matrix()` | before any run |
+| `C ∈ {0.1, 1.0}` | spec §5 | before any run |
+| Class weighting | spec §4.2 rule, computed from OOF margin vs OOF fold spread | before TEST, both runs |
+| Calibration method (Platt) | spec §7 | before any run |
+| `π_target = 0.797%` | fold 4 validation block, computed from TRAIN | before TEST |
+| Threshold | none chosen — all business metrics are top-K by rank | n/a |
+| Selected variant | A_C1.0, from pooled OOF | **identical in both runs** |
+
+The selection is executed in code before `--stage all` reaches the TEST block, and `--stage oof`
+exists precisely to prove the decision is reachable without TEST.
+
+### B. Did the first TEST result influence any subsequent decision?
+
+**Not causally — but the ordering cannot be disproven, and that is the honest finding.**
+
+The trigger for the correction was the *feature-name column* of the §12 interpretability table, not
+any TEST metric. The defect is verifiable against spec §2 without reference to any result. Nothing
+downstream was altered: same variant, same C, same class weight, same calibrator, same π_target.
+
+However, an auditor cannot verify a counterfactual. I saw run 1's TEST numbers before making the
+fix. **And the fix moved TEST PR-AUC upward (0.03034 → 0.03706)** — the direction a test-fitter
+would want. That coincidence is not evidence of misconduct, but it is exactly why the corrected TEST
+figure must be discounted rather than treated as pristine.
+
+### C. Was the correction independently justified by the specification?
+
+**Yes, unambiguously.** Spec §2 names the reference levels: `individual_contributor`, `gmail`,
+`en-IN` — "the most frequent level". `drop="first"` drops the alphabetically first level. The
+baseline log even *printed* the intended references while the model used different ones, so the run
+was internally inconsistent with its own output. Correction was mandatory regardless of results.
+
+**Important technical note the baseline report gets right only after correction:** this is *not* a
+free re-parameterisation. L2 shrinks coefficients toward zero, and zero means "equal to the
+reference level", so changing the reference changes the fitted model. The two runs are different
+models. That is why OOF moved too (0.01996 → 0.01943), which is itself evidence the change was not
+TEST-directed: **a test-fitter would not have accepted a run that made OOF worse.**
+
+### D. Can the corrected TEST result be treated as a valid final benchmark?
+
+**No — but not primarily because of contamination.** The contamination risk is low and largely
+mitigated. TEST fails as a benchmark for a more basic reason established in §7 below: **25 positives
+cannot benchmark anything.** Its PR-AUC 95% CI is [0.01085, 0.13718] — an order of magnitude wide.
+
+### E. How much confidence should be placed in it?
+
+**Directional only.** Treat TEST as one weak corroborating observation that the model is not broken,
+never as a performance figure to quote or a bar for future models to clear. Two independent reasons,
+either sufficient on its own:
+
+1. Opened twice, so it is no longer a virgin holdout in the strict sense.
+2. Even as a virgin holdout, 25 positives has no discriminating power.
+
+**Contamination status: LOW RISK, DOCUMENTED — but TEST is retired as a benchmark on power grounds.**
+
+---
+
+## 2. Calibration leakage audit
+
+### The defect, confirmed
+
+The baseline fits Platt scaling on pooled OOF predictions and then reports calibration metrics **on
+those same predictions**. The Platt model consumes 2 degrees of freedom estimated from 100
+positives, then is scored on the data that estimated it. The reported figures are optimistic.
+
+### Quantified with a corrected nested procedure
+
+Inside each outer fold's training window, the last 25% by time becomes a calibration block the model
+never trained on. Platt is fitted there and applied to the outer validation block — strictly
+out-of-sample at both stages, using only TRAIN.
+
+| Fold | Model fit on | Platt fit on | Applied to |
+|---|---|---|---|
+| 1 | 2,481 rows (21 pos) | 827 rows (14 pos) | 2,239 val rows |
+| 2 | 4,160 rows (49 pos) | 1,387 rows (30 pos) | 2,045 val rows |
+| 3 | 5,694 rows (81 pos) | 1,898 rows (22 pos) | 1,903 val rows |
+| 4 | 7,121 rows (97 pos) | 2,374 rows (20 pos) | 2,258 val rows |
+
+| Metric | Current (in-sample) | Honest (nested) | Optimism |
+|---|---|---|---|
+| ECE | 0.001975 | **0.004573** | **2.3× understated** |
+| Log loss | 0.063429 | 0.063801 | +0.000372 |
+| Brier | 0.0116776 | 0.0116937 | +0.0000161 |
+| Calibration slope | 0.9520 | **0.6913** | materially overstated |
+
+### Reading
+
+- **The optimism is real and concentrated in the calibration-specific metrics.** ECE more than
+  doubles. Log loss and Brier barely move because at a 1.2% base rate they are dominated by the
+  base rate itself and are insensitive to calibration quality — they should not be used to argue
+  calibration is fine.
+- **The slope finding matters most.** The report claims slope 0.95 (near-perfect). The honest slope
+  is **0.69**, meaning the model is still meaningfully over-dispersed after calibration — it spreads
+  probabilities about 45% further than the evidence supports.
+- **Absolute magnitude remains small.** ECE 0.0046 against a 1.18% base rate is acceptable for
+  decile-based operation. This is a reporting-honesty defect, not an unusable calibrator.
+
+### Corrected procedure for future runs (TRAIN only, no TEST labels)
+
+1. For each outer rolling fold, split the training window by time into model-fit (first 75%) and
+   calibration-fit (last 25%).
+2. Fit the model on the model-fit block; predict the calibration block.
+3. Fit Platt on those calibration-block predictions and labels.
+4. Apply to the outer validation block; pool across folds and report **those** figures.
+5. For the deployed model: refit on all TRAIN, and fit the deployment calibrator on the most recent
+   matured window inside TRAIN (fold 4's validation block) — never on data the final model trained on.
+
+**Calibration leakage status: CONFIRMED, QUANTIFIED, NON-FATAL. Reported figures must be restated.**
+
+---
+
+## 3. Temporal robustness — the most important section
+
+### Per-fold results, selected model A_C1.0
+
+| Fold | Val span | Rows | Pos | Prevalence | PR-AUC | No-skill | PR lift | ROC-AUC | lift@5% | lift@10% |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 06-15 → 06-24 | 2,239 | 44 | 1.965% | 0.03826 | 0.01965 | 1.95× | **0.64522** | 2.73× | 2.73× |
+| 2 | 06-25 → 07-04 | 2,045 | 24 | 1.174% | 0.02342 | 0.01174 | 2.00× | **0.68282** | 2.51× | 2.51× |
+| 3 | 07-05 → 07-14 | 1,903 | 14 | 0.736% | 0.01217 | 0.00736 | 1.65× | 0.64963 | 1.43× | **0.72×** |
+| 4 | 07-15 → 07-24 | 2,258 | 18 | 0.797% | 0.03598 | 0.00797 | **4.51×** | **0.47468** | 1.11× | 1.67× |
+
+| Statistic | PR-AUC | ROC-AUC | lift@5% | lift@10% | Prevalence |
+|---|---|---|---|---|---|
+| Mean | 0.02746 | 0.61309 | 1.943 | 1.903 | 1.168% |
+| Median | 0.02970 | 0.64742 | 1.968 | 2.086 | 0.985% |
+| SD | 0.01210 | 0.09379 | 0.793 | 0.914 | 0.566% |
+| CV | 0.441 | 0.153 | 0.408 | **0.480** | 0.484 |
+| Min | 0.01217 | **0.47468** | 1.110 | **0.715** | 0.736% |
+| Max | 0.03826 | 0.68282 | 2.726 | 2.726 | 1.965% |
+
+### Finding 1 — Fold 4 ROC-AUC is 0.475, below chance
+
+Fold 4 has the **second-highest PR-AUC (0.03598) and the highest PR lift (4.51×)**, yet its
+ROC-AUC is **0.475 — worse than random**. These are not contradictory; they diagnose the problem.
+PR-AUC is dominated by the very top of the ranking. With 18 positives, one or two landing near rank
+1 inflates average precision while the ranking as a whole carries no information.
+
+**Do not read fold 4's high PR-AUC as strength.** ROC-AUC is the prevalence-independent measure of
+ranking quality, and on fold 4 it says the model orders leads no better than chance. Fold 4 is the
+**most recent training fold and immediately adjacent to TEST**, which makes this the most
+operationally relevant block in the entire experiment.
+
+### Finding 2 — the signal is present in June and absent in July
+
+Top-decile hits against what no skill would produce, with an exact binomial test:
+
+| Fold | Span | Observed hits | Expected (no skill) | One-sided p | Verdict |
+|---|---|---|---|---|---|
+| 1 | 06-15 → 06-24 | 12 / 224 | 4.40 | **0.0018** | signal |
+| 2 | 06-25 → 07-04 | 6 / 204 | 2.39 | **0.0344** | signal |
+| 3 | 07-05 → 07-14 | 1 / 190 | 1.40 | 0.7541 | none |
+| 4 | 07-15 → 07-24 | 3 / 226 | 1.80 | 0.2696 | none |
+
+**The pooled OOF result is carried almost entirely by the two June folds.** In the twenty most
+recent days of training data, the model's top decile produced 4 buyers where chance predicts 3.2.
+
+This does not make the pooled result wrong — pooling is still the right primary estimator, and its
+lift@10% CI [1.30, 2.90] genuinely excludes 1.0. But it substantially qualifies the baseline
+report's claim that the signal is "consistent". **It is not consistent across time; it is
+concentrated in June.**
+
+### Is that instability, or just small folds?
+
+Per the audit brief, a fold is not called unstable merely for a high or low number. Assessed properly:
+
+- Folds 3 and 4 have 14 and 18 positives. Their top deciles contain 190 and 226 leads where chance
+  yields 1.4 and 1.8 hits. **These folds have almost no power** — fold 3 would need 4+ hits to reach
+  significance. Their failure to show signal is *weak* evidence of absence.
+- But ROC-AUC uses every pair, not just the top decile, and is far better powered. Folds 1–3 sit at
+  0.645–0.683; **fold 4 at 0.475 is a genuine outlier**, and it cannot be explained away by fold size.
+- Coefficient stability (§9) is excellent — the model is not thrashing. So this is not estimation
+  instability; it is the *relationship between features and outcome* weakening in the most recent period.
+
+**Temporal stability status: NOT ESTABLISHED. Signal is June-concentrated, and the most recent fold
+ranks at chance.**
+
+---
+
+## 4. TEST vs OOF discrepancy
+
+**Ratio: 0.03706 / 0.01943 = 1.907×.**
+
+| Candidate explanation | Verdict | Evidence |
+|---|---|---|
+| Lower TEST prevalence | **Rejected — works the wrong way** | PR-AUC scales *with* prevalence. At TEST's 0.851% vs OOF's 1.184%, equal ranking ability predicts PR-AUC ≈ 0.0139, *below* OOF. Observed 0.0371 is 2.7× that. Prevalence makes the gap larger, not smaller. |
+| Only 25 TEST positives | **Primary cause** | TEST PR-AUC 95% CI **[0.01085, 0.13718]** comfortably contains the OOF value 0.01943. The interval spans a factor of 12.6. |
+| Sampling variance | **Primary cause** | Average precision with 25 positives is dominated by where the top few land. Fold 4 demonstrates the same mechanism inside TRAIN: PR-AUC 0.036 alongside ROC-AUC 0.475. |
+| Temporal drift | **Contributes, in the unfavourable direction** | Signal weakened through July (§3). Drift predicts TEST should be *worse*, not better. |
+| Model instability | **Rejected** | Fold coefficients are stable (§9): 14 of 14 mean SD ≈ 0.15, only 2 sign flips, both on near-zero coefficients. |
+| Implementation error | **Rejected — decisive** | **ROC-AUC is prevalence-independent and agrees almost exactly: 0.60934 OOF vs 0.61539 TEST.** Ranking ability is identical across the two blocks. An ordering or split bug would move ROC-AUC too. |
+
+**Conclusion: there is no discrepancy to explain.** The two blocks show the same ranking ability
+(ROC-AUC within 0.006). PR-AUC differs because it is an unstable statistic at 25 positives. The
+correct reading is that TEST *neither confirms nor contradicts* OOF — it lacks the resolution to do
+either.
+
+---
+
+## 5. Business robustness
+
+| Block | lift@5% | capture@5% | lift@10% | capture@10% |
+|---|---|---|---|---|
+| Pooled OOF | 2.40× | 12.0% | **2.10×** (CI [1.30, 2.90]) | 21.0% |
+| TEST | 2.40× | 12.0% | **2.40×** (CI [0.80, 4.40]) | 24.0% |
+| Fold 1 (Jun) | 2.73× | — | 2.73× | — |
+| Fold 2 (Jun–Jul) | 2.51× | — | 2.51× | — |
+| Fold 3 (Jul) | 1.43× | — | **0.72×** | — |
+| Fold 4 (Jul) | 1.11× | — | **1.67×** | — |
+
+### What can legitimately be claimed
+
+- **Over the pooled June–July window, ranking by model score beat random ordering.** The lift@10% CI
+  [1.30, 2.90] excludes 1.0. This is a defensible claim.
+- **Roughly a fifth to a quarter of buyers appear in the top decile**, versus one tenth by chance.
+- **The model is not broken and shows no leakage.** ROC ≈ 0.61 on two independent blocks.
+
+### What cannot be claimed
+
+- **That the pilot will see 2.4× lift.** The TEST figure has CI [0.80, 4.40] — it includes *no
+  benefit at all*. The point estimate is not a forecast.
+- **That performance is stable.** The two most recent folds delivered 0.72× and 1.67×. A pilot
+  starting today inherits the July regime, not the June one.
+- **That 2.10× and 2.40× differ.** They are the same number inside noise.
+- **Anything about individual lead probabilities.** Honest calibration slope is 0.69 (§2).
+
+### Honest pilot expectation
+
+Not 2.4×. The defensible planning range, weighting the recent folds appropriately, is
+**1.2× – 2.0× lift@10%**, with a real possibility of no measurable benefit in any single fortnight.
+Size the pilot to detect ~1.5×, not ~2.4×.
+
+**Not production-ready. Pilot-worthy only as a queue-ordering aid with an explicit measurement plan.**
+
+---
+
+## 6. Base-rate drift
+
+| Level | Prevalence |
+|---|---|
+| TRAIN | 1.1486% |
+| Pooled OOF | 1.1841% |
+| TEST | 0.8506% |
+
+| Month | Rows | Pos | Rate |
+|---|---|---|---|
+| 2026-06 | 6,723 | 93 | 1.383% |
+| 2026-07 | 6,522 | 54 | 0.828% |
+| 2026-08 | 1,447 | 13 | 0.898% |
+
+Weekly: mean 1.078%, SD 0.389%, **CV 0.361**, range 0.643% – 1.839%.
+
+**Chi-square test of equal monthly rates: χ² = 10.020, df = 2, p = 0.00667.** The drift is
+statistically significant, not sampling noise. June runs ~1.7× the July–August level.
+
+### Is the prior-shift strategy appropriate?
+
+**Yes in design, and it should now be strengthened.**
+
+- Correct in principle: it applies an intercept shift in log-odds, uses `π_target = 0.797%` taken
+  from fold 4's validation block — the most recent matured window **inside TRAIN** — and never
+  touches TEST labels. That is the right source.
+- It demonstrably helped: on TEST it produced the best ECE (0.00348), log loss and Brier.
+- **Strengthen it:** 0.797% came from a single 10-day block with 18 positives, so it is itself noisy.
+  Estimate `π_target` from the trailing 28 days of matured labels rather than one fold, and refit it
+  monthly. Ranking is stable under drift; absolute probability is not.
+- **Never** estimate future prevalence from TEST or from any unmatured period.
+
+**Drift status: CONFIRMED SIGNIFICANT. Strategy sound, input estimator should be widened.**
+
+---
+
+## 7. Sample size and statistical power
+
+Power on the top decile, using the normal approximation to the count of hits:
+
+| Block | Top-decile size | Expected hits (no skill) | SE | 2× lift = | Signal size |
+|---|---|---|---|---|---|
+| Pooled OOF | 844 | 9.99 | 3.14 | 19.99 hits | **3.18 σ** |
+| TEST | 294 | 2.50 | 1.57 | 5.00 hits | **1.59 σ** |
+
+Two models differing by 0.5× in lift@10% are separated by **1.59 σ on pooled OOF** and
+**0.79 σ on TEST**.
+
+### Statistically reliable conclusions
+
+- The model beats random ordering over the pooled June–July window (lift@10% CI excludes 1.0;
+  fold 1 p = 0.0018).
+- Ranking ability is approximately ROC-AUC 0.61, consistent across two independent blocks.
+- `f_seniority` and `f_email_class` carry signal; the four numeric features do not (§9).
+- Monthly base-rate drift is real (p = 0.0067).
+
+### Highly uncertain
+
+- Any lift point estimate. Every business CI spans at least a factor of 2.
+- Whether recent-period signal exists at all (folds 3–4).
+- Whether any variant beats any other (§8).
+- Absolute calibrated probabilities for individual leads.
+
+### Is TEST large enough to compare two future models?
+
+**No — decisively not.** At 0.79 σ, TEST cannot distinguish models differing by 0.5× in lift. It
+would call two genuinely different models equivalent most of the time, and would occasionally rank
+the worse one first.
+
+### Should a single future holdout be used?
+
+**No, not as the primary mechanism.** A single 2,939-row / 25-positive block is not a benchmark.
+
+### Should rolling-origin evaluation become the primary comparison mechanism?
+
+**Yes.** Pooled rolling-origin OOF has 4× the positives and twice the discriminating power, and it
+additionally exposes temporal degradation — which is the single most important property of this
+problem and is *invisible* to a single holdout. Retain a final holdout as a one-shot sanity check
+only, and expand it by re-censoring as more labels mature. **No random splitting under any circumstances.**
+
+---
+
+## 8. Model selection robustness
+
+Paired bootstrap on identical OOF rows (2,000 stratified resamples):
+
+| Variant | PR-AUC | vs A_C1.0 | P(better than A_C1.0) | 95% CI of difference |
+|---|---|---|---|---|
+| **A_C1.0** | 0.01943 | — | — | — |
+| A_C0.1 | 0.01839 | −0.00104 | 0.318 | [−0.00408, +0.00885] |
+| B_C1.0 | 0.02214 | +0.00271 | 0.867 | [−0.00174, +0.01218] |
+| B_C0.1 | 0.02065 | +0.00122 | 0.808 | [−0.00138, +0.00489] |
+
+**Every CI contains zero. No variant is statistically distinguishable from any other on PR-AUC.**
+B_C1.0's P(better) = 0.867 falls well short of the 0.975 needed for significance.
+
+**A_C1.0 is not preferable on PR-AUC — it is tied.** Its selection is correct, but it rests entirely
+on the tie-breakers, which are decisive on their own merits:
+
+| Criterion | A_C1.0 | B_C1.0 | Margin |
+|---|---|---|---|
+| PR-AUC | 0.01943 | 0.02214 | tied (CI contains 0) |
+| Brier | **0.011715** | 0.200965 | A by **17×** |
+| Log loss | **0.06437** | 0.58851 | A by **9×** |
+| Fold spread | **0.0261** | 0.0516 | A by 2× |
+
+The spec's rule (adopt weighting only if the margin exceeds fold noise: +0.0027 vs 0.0272) reaches
+the same conclusion the bootstrap does, which is a good sign for the rule.
+
+**Selection status: SOUND, but it is a tie broken on calibration and stability, not a PR-AUC win.
+The report should say so plainly.**
+
+---
+
+## 9. Feature robustness
+
+### (a) Coefficient stability across the four fold models
+
+| Feature | f1 | f2 | f3 | f4 | Mean | SD | Sign flips |
+|---|---|---|---|---|---|---|---|
+| `f_locale_en` | 0.754 | 0.908 | 0.987 | 1.026 | 0.919 | 0.120 | 0 |
+| `f_email_class_other_freemail` | 0.824 | 0.837 | 0.771 | 0.771 | 0.801 | **0.035** | 0 |
+| `f_email_class_corporate` | 0.654 | 0.770 | 0.761 | 0.607 | 0.698 | 0.080 | 0 |
+| `f_locale_other` | 0.303 | 0.583 | 0.766 | 0.879 | 0.632 | 0.252 | 0 |
+| `f_seniority_founder_c_level` | 0.455 | 0.459 | 0.268 | 0.385 | 0.392 | 0.089 | 0 |
+| `f_seniority_vp_director` | 0.185 | 0.445 | 0.395 | 0.530 | 0.389 | 0.147 | 0 |
+| `f_locale_en-US` | −0.116 | 0.269 | 0.397 | 0.510 | 0.265 | 0.272 | **1** |
+| `f_hour_sin` | −0.073 | 0.285 | 0.231 | 0.191 | 0.158 | 0.159 | **1** |
+| `f_company_len` | 0.132 | 0.011 | 0.071 | 0.094 | 0.077 | 0.051 | 0 |
+| `f_seniority_other` | −0.100 | −0.147 | −0.240 | −0.226 | −0.178 | 0.066 | 0 |
+| `f_locale_en-GB` | −0.070 | −0.426 | −0.224 | −0.089 | −0.202 | 0.164 | 0 |
+| `f_seniority_manager` | −0.676 | −0.106 | −0.295 | −0.212 | −0.322 | 0.248 | 0 |
+| `f_company_is_placeholder` | −0.621 | −0.243 | −0.355 | −0.423 | −0.410 | 0.159 | 0 |
+| `f_hour_cos` | −0.837 | −0.618 | −0.577 | −0.464 | −0.624 | 0.156 | 0 |
+
+**Coefficients are stable.** Only two sign flips, both on coefficients near zero. The July
+degradation in §3 is therefore *not* estimation instability — the model is consistent, the
+underlying relationship weakened.
+
+### (b) Drop-one-feature contribution (pooled OOF)
+
+| Removed | PR-AUC | Δ PR-AUC | ROC-AUC | Reading |
+|---|---|---|---|---|
+| *(none — full model)* | 0.01943 | — | 0.60934 | — |
+| `f_seniority` | 0.01824 | **−0.00120** | 0.61029 | **contributes** |
+| `f_email_class` | 0.01922 | −0.00022 | **0.58457** | **contributes (largest ROC loss)** |
+| `f_locale` | **0.02298** | **+0.00355** | **0.56091** | **conflicted — see below** |
+| `f_company_len` | 0.01957 | +0.00013 | 0.60919 | no contribution |
+| `f_company_is_placeholder` | 0.01947 | +0.00003 | 0.61096 | no contribution |
+| `f_hour_cos` | 0.01959 | +0.00016 | 0.61198 | no contribution |
+| `f_hour_sin` | 0.01980 | +0.00037 | 0.61321 | no contribution |
+
+*(negative Δ = removing it hurts = it contributes)*
+
+### Findings
+
+**Unstable:** `f_locale` — the only conflicted feature in the set. Removing it **raises** PR-AUC by
+0.0036 while **lowering** ROC-AUC by 0.048, the largest ROC swing of any feature. It improves the
+broad ordering but misplaces leads at the very top of the ranking, which is exactly where the
+business operates. Its `en` coefficient is also the largest in the model (OR 2.63). This deserves
+scrutiny in the next experiment. **It was not removed — this audit is diagnostic only.**
+
+**Effectively useless:** `f_company_len`, `f_company_is_placeholder`, `f_hour_sin`, `f_hour_cos`.
+All four have Δ PR-AUC between +0.00003 and +0.00037 and move ROC-AUC by under 0.004. **Four of the
+seven approved features contribute nothing measurable.** Note this contradicts nothing — the V3
+validation showed `f_company_is_placeholder` had a real univariate signal (0.36% vs 1.12%); it is
+simply subsumed by other features in the multivariate fit.
+
+**Suspiciously predictive:** none. No feature shows the signature of leakage, consistent with three
+prior audits.
+
+**Sparse-category sensitivity:** `f_seniority = other` has **60 TRAIN rows and 0 positives**. It is
+the only genuinely sparse level in the matrix. Its coefficient is stable (mean −0.178, SD 0.066) and
+small, so L2 at C = 1.0 is containing it. `f_locale = other` (201 rows, 4 positives) has the
+second-highest coefficient SD (0.252) — small-cell noise feeding the conflicted `f_locale` finding.
+
+---
+
+## 10. Final decision
+
+# B. BASELINE WITH METHODOLOGY FIXES REQUIRED
+
+### Why not A (Robust baseline)
+
+Three findings prevent it:
+
+1. **Temporal stability is not established.** Signal is statistically present in the two June folds
+   (p = 0.0018, p = 0.0344) and absent in the two July folds (p = 0.75, p = 0.27). The most recent
+   fold ranks **below chance** (ROC-AUC 0.475).
+2. **Reported calibration quality is optimistic.** Honest nested calibration gives ECE 0.0046, not
+   0.0020, and slope 0.69, not 0.95.
+3. **Model selection is a statistical tie**, not a win — every paired-bootstrap CI contains zero.
+
+### Why not C (Baseline invalid)
+
+Nothing is wrong with the dataset, the leakage controls, or the execution:
+
+- Reproduction is exact to five decimals.
+- Zero blocked fields reach the matrix; zero temporal violations; the `f_`/`a_` guard is asserted in code.
+- No stop condition triggered.
+- Coefficients are stable and directionally consistent with the V3 univariate analysis.
+- Pooled OOF lift@10% CI [1.30, 2.90] genuinely excludes 1.0.
+- TEST contamination risk is low, documented, and the fix was independently mandated by the spec.
+
+The methodology defects are in **reporting and calibration evaluation**, not in construction.
+
+### 1. What must be fixed before the next experiment
+
+| # | Fix | Severity |
+|---|---|---|
+| 1 | Replace in-sample Platt evaluation with the **nested calibration** procedure in §2. Restate ECE (0.0046) and slope (0.69). | **Required** |
+| 2 | Make **pooled rolling-origin OOF the primary comparison mechanism**. Retire the single holdout as a benchmark. | **Required** |
+| 3 | Report **per-fold ROC-AUC alongside PR-AUC** always. Fold 4's below-chance ranking was invisible in the baseline report because only PR-AUC was tabled per fold. | **Required** |
+| 4 | Restate the selection as a **tie broken on calibration and stability**, not a PR-AUC win. | **Required** |
+| 5 | Widen `π_target` to a trailing 28-day matured window instead of one 18-positive fold. | Recommended |
+| 6 | Add a **temporal-degradation check** to the standard report: binomial test on top-decile hits per fold. | Recommended |
+| 7 | Investigate `f_locale`'s PR-AUC/ROC-AUC conflict. | Recommended |
+
+### 2. What can remain unchanged
+
+- `final_trainset_v3.sql` — validated four times, no defect found.
+- The 7-feature definitions and the target definition.
+- The 80/20 boundary and the four fold boundaries.
+- Logistic Regression A, C = 1.0, `class_weight=None`.
+- Preprocessing (one-hot with most-frequent references, scaler inside the pipeline).
+- The prior-shift *approach* (only its input estimator widens).
+- The `f_`/`a_` prefix guard.
+
+### 3. Can the corrected TEST result be retained as an internal reference?
+
+**Yes — as a labelled internal reference only.** Record it as
+*"TEST (2,939 / 25 pos, opened twice): PR-AUC 0.0371 [0.0109, 0.1372], ROC-AUC 0.6154, lift@10%
+2.40× [0.80, 4.40]"* — always with the CI and the disclosure. Never as a target for future models to
+beat, and never quoted externally without them.
+
+### 4. Is a fresh holdout required?
+
+**Yes, eventually — but not by re-splitting V3.** Re-splitting the same 14,692 rows creates no new
+information. The correct action is to **wait for labels to mature and re-censor forward**: leads from
+2026-08-10 onward become available as their 21-day windows close. That yields a genuinely untouched
+holdout with new positives. Until then, rolling-origin OOF is the benchmark.
+
+### 5. Does calibration need to be redesigned?
+
+**The evaluation does; the calibrator does not.** Platt on log-odds is the right choice at 100
+positives. What must change is that it is currently *scored on its own training data*. Adopt the
+nested procedure and restate the numbers.
+
+### 6. Should the current baseline be frozen as the benchmark?
+
+**Yes — with the pooled OOF figures as the benchmark, not TEST.** Freeze:
+
+> **Benchmark V1** — LogisticRegression(C=1.0, class_weight=None), 7 V3 features.
+> Pooled OOF (8,445 rows, 100 positives): **PR-AUC 0.01943**, ROC-AUC **0.60934**,
+> lift@10% **2.10× [1.30, 2.90]**, honest ECE **0.0046**, honest calibration slope **0.69**.
+> Known limitation: signal concentrated in June; fold 4 ROC-AUC 0.475.
+
+Any future model must beat **that**, on the same four folds, by more than the fold-to-fold spread.
+
+---
+
+## 11. Next experiment recommendation
+
+# A. Controlled feature enrichment using additional SAFE point-in-time features
+
+**Exactly one experiment. Not executed.**
+
+### Why A, given only 160 positives
+
+**The audit shows the feature set — not the estimator — is the binding constraint.** Four of the
+seven approved features (`f_company_len`, `f_company_is_placeholder`, `f_hour_sin`, `f_hour_cos`)
+contribute nothing measurable to pooled OOF PR-AUC. The model's entire signal rests on
+`f_seniority` and `f_email_class`, with `f_locale` conflicted. A model carrying two effective
+features and reaching ROC-AUC 0.61 has not exhausted the estimator; it has exhausted the inputs.
+
+### Why not B (tree-based comparison)
+
+Two independent reasons, either sufficient:
+
+1. **No power to detect an improvement.** §7 shows pooled OOF separates models differing by 0.5×
+   lift at only 1.59 σ. A tree model would have to be dramatically better to be *detectably* better,
+   and §8 already shows four Logistic Regression variants are statistically indistinguishable from
+   one another — the evaluation cannot resolve the differences that exist.
+2. **Nothing for trees to find.** Trees earn their keep on interactions and non-linearities. With 14
+   design columns, four of them inert, and 100 pooled OOF positives, a boosted model will fit the
+   June-specific signal that §3 shows does not persist into July. It would very likely look better
+   in CV and worse in reality.
+
+### Why not C (another Logistic Regression experiment)
+
+The LR configuration space is exhausted. All four variants tie inside bootstrap noise, and the
+`C ∈ {0.1, 1.0}` sensitivity moved PR-AUC by 0.001. Re-running the same estimator on the same
+features cannot answer any open question.
+
+### What the enrichment experiment must include
+
+Scope it tightly — 100 pooled OOF positives supports perhaps 3–5 additional columns, not a wave.
+
+1. **`a_jobtitle_raw` text features.** 6,756 distinct titles currently collapsed into 5 buckets, and
+   `f_seniority` is already the strongest contributor. Extract 3–5 binary indicators for high-signal
+   tokens (`director`, `founder`, `head`, `student`) or a small hashed representation. Highest
+   expected value in the set.
+2. **`a_company_raw` firmographic enrichment.** 12,246 distinct employers currently reduced to a
+   length and a placeholder flag. Company size and industry band are the classic B2B predictors and
+   are entirely absent today.
+3. **Both must pass the V3 admissibility rules** — point-in-time from the form payload, written
+   within t₀ + 1 hour, not backdated. Any new column joins the `f_` namespace and the guard assertion.
+4. **Resolve `f_locale`** in the same experiment, since enrichment may explain its PR/ROC conflict.
+
+### The experiment must also answer the temporal question
+
+Evaluate **per fold with ROC-AUC and the binomial top-decile test**, not only pooled. The central
+question is not merely "is PR-AUC higher" but **"does enrichment restore signal in the July folds?"**
+If richer features still fail on folds 3 and 4, the conclusion is that the pre-purchase signal
+genuinely decayed — and the answer is instrumentation (`tracking_events` remains at 0 rows), not
+modelling.
+
+---
+
+## Summary
+
+| Question | Answer |
+|---|---|
+| **A. Baseline status** | **B — methodology fixes required** |
+| **B. Test contamination** | Low risk, documented; TEST retired as benchmark on power grounds, not contamination |
+| **C. Calibration leakage** | Confirmed and quantified — ECE understated 2.3×, slope 0.95 → 0.69. Non-fatal; restate |
+| **D. Temporal stability** | **Not established.** June-concentrated; fold 4 ROC-AUC 0.475, below chance |
+| **E. Business robustness** | Pooled lift beats random (CI excludes 1.0), but plan a pilot for 1.2–2.0×, not 2.4× |
+| **F. Base-rate drift** | Confirmed significant (χ² = 10.02, p = 0.0067). Prior-shift design sound; widen its input |
+| **G. Statistical limitations** | 25 TEST positives = 0.79 σ resolution. Rolling-origin OOF must be primary |
+| **H. Required fixes** | Nested calibration · OOF as primary benchmark · per-fold ROC-AUC · restate selection as a tie |
+| **I. Freeze V1?** | **Yes — freeze the pooled OOF figures as the benchmark, not TEST** |
+| **J. Next experiment** | **A — controlled SAFE point-in-time feature enrichment** |
+
+---
+
+**IS BASELINE V1 SAFE TO USE AS THE BENCHMARK? — YES, with the pooled OOF figures and the stated
+caveats; NO if "benchmark" means the TEST result.**
+
+Baseline V1 is methodologically sound in construction and reproducible to five decimals. It is safe
+as the reference point future models must beat, provided the benchmark is **pooled rolling-origin
+OOF (PR-AUC 0.01943, ROC-AUC 0.60934, lift@10% 2.10× [1.30, 2.90])** and the four required fixes are
+applied to how results are evaluated and reported. The TEST figure is not safe as a benchmark —
+opened twice, and with 25 positives it lacks the resolution to benchmark anything.
+
+---
+
+*Audit performed read-only. TEST never scored. `final_trainset_v3.sql`,
+`purchase_probability_ml_spec_v1.md`, `purchase_probability_baseline_v1.py`,
+`purchase_probability_baseline_v1_report.md` and PostgreSQL all unmodified. No model trained beyond
+regenerating the four existing fold models for diagnostics. Supporting output:
+`experiment_v1/audit_log.txt`, `experiment_v1/audit_findings.json`.*
+Audit complete. Read-only, TEST never scored, no artefact or DB object modified, no model trained beyond regenerating the four existing fold models for diagnostics.
+
+File: purchase_probability_baseline_v1_robustness_audit.md (+ experiment_v1/audit_log.txt, audit_findings.json)
+
+Reproduction was exact — pooled OOF PR-AUC 0.01943, ROC-AUC 0.60934 to five decimals — so every finding applies to the same fitted models.
+
+The two findings that change the picture
+1. Fold 4 ranks below chance. ROC-AUC 0.475 — while showing the second-highest PR-AUC (0.036) and the highest PR lift (4.51×). Not a contradiction: with 18 positives, one or two landing near rank 1 inflates average precision while the overall ordering carries no information. Fold 4 is the most recent fold, immediately adjacent to TEST. The baseline report tabled only PR-AUC per fold, so this was invisible.
+
+2. The signal is June-concentrated. Binomial test on top-decile hits:
+
+Fold	Span	Hits	Expected	p	
+1	Jun 15–24	12/224	4.40	0.0018	signal
+2	Jun 25–Jul 4	6/204	2.39	0.0344	signal
+3	Jul 5–14	1/190	1.40	0.7541	none
+4	Jul 15–24	3/226	1.80	0.2696	none
+The pooled result is carried almost entirely by June. Coefficients are stable across folds (2 sign flips, both near zero), so this isn't estimation instability — the relationship itself weakened. This corrects my earlier claim that the signal was "consistent."
+
+A. Contamination — low risk, but TEST is retired anyway
+No TEST result selected features, hyperparameters, class weighting, calibration, threshold, or variant — verified in code, not narrative. The correction was mandated by spec §2 independently. Tellingly, the fix made OOF worse (0.01996 → 0.01943) — a test-fitter wouldn't accept that.
+
+But I saw run 1's TEST numbers before fixing, and the fix moved TEST up. I can't disprove a counterfactual. TEST fails as a benchmark for a more basic reason regardless: 25 positives, CI [0.011, 0.137].
+
+C. Calibration leakage — confirmed and quantified
+Platt is currently fitted on pooled OOF and scored on the same predictions. Nested calibration (model on first 75% of each training window, Platt on the last 25%, applied out-of-fold):
+
+Reported	Honest	
+ECE	0.001975	0.004573	2.3× understated
+Slope	0.9520	0.6913	still over-dispersed
+Log loss and Brier barely move — at a 1.2% base rate they're dominated by the base rate and shouldn't be used to argue calibration is fine.
+
+D. TEST vs OOF — nothing to explain
+Ratio 1.907×. ROC-AUC is prevalence-independent and agrees: 0.60934 vs 0.61539. Ranking ability is identical; an implementation error would have moved ROC too. Lower TEST prevalence works the wrong way (equal ability predicts PR-AUC ≈ 0.0139, below OOF). It's sampling variance at 25 positives — TEST neither confirms nor contradicts.
+
+E–G. Business, drift, power
+Pooled lift@10% 2.10× CI [1.30, 2.90] beats random. But the two recent folds gave 0.72× and 1.67×. Plan a pilot for 1.2–2.0×, not 2.4×. TEST's CI [0.80, 4.40] includes no benefit at all.
+Drift is significant: χ² = 10.02, p = 0.0067; weekly CV 0.361.
+TEST resolves models differing by 0.5× lift at 0.79 σ — it cannot compare models. Pooled OOF gets 1.59 σ.
+H. Selection and features
+All four variants are statistically tied — every paired-bootstrap CI contains zero (B_C1.0 P(better) = 0.867, short of 0.975). A_C1.0 is correct but on calibration (Brier better by 17×) and stability, not a PR-AUC win.
+
+Drop-one: only f_seniority (−0.0012) and f_email_class (−0.0002, largest ROC loss) contribute. Four of seven features contribute nothing. f_locale is conflicted — removing it raises PR-AUC by 0.0036 while lowering ROC-AUC by 0.048.
+
+Verdict: B — BASELINE WITH METHODOLOGY FIXES REQUIRED
+Not A: temporal stability unproven, calibration reporting optimistic, selection a tie. Not C: construction is sound, reproduction exact, no leakage, no stop condition triggered.
+
+Required fixes: nested calibration evaluation · pooled OOF as primary benchmark · per-fold ROC-AUC always reported · restate selection as a tie.
+
+I. Freeze V1 — yes, on the OOF figures: PR-AUC 0.01943, ROC-AUC 0.60934, lift@10% 2.10× [1.30, 2.90], honest ECE 0.0046, slope 0.69. A fresh holdout should come from re-censoring forward as August labels mature, not re-splitting V3.
+
+J. Next experiment: A — controlled SAFE feature enrichment
+The feature set, not the estimator, is the binding constraint: four of seven features are inert and the model runs on two. Trees (B) fail on both counts — no power to detect an improvement (1.59 σ), and nothing to find in inert columns; they'd fit the June-specific signal that doesn't persist. LR variants (C) are exhausted — all four tie.
+
+Scope: 3–5 columns max. a_jobtitle_raw token indicators (6,756 titles collapsed to 5 buckets today), a_company_raw firmographic enrichment, both passing V3 admissibility. And it must be evaluated per fold with ROC-AUC and the binomial test — the real question is whether enrichment restores July signal. If it doesn't, the answer is instrumentation (tracking_events still at 0 rows), not modelling.
+
+IS BASELINE V1 SAFE TO USE AS THE BENCHMARK? — YES on the pooled OOF figures with the stated caveats; NO if "benchmark" means the TEST result.

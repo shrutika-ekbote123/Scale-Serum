@@ -24,6 +24,7 @@ from typing import List, Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends, Security
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
@@ -885,6 +886,59 @@ async def test_script(body: ScriptTestRequest):
             ],
             fallback=True,
         )
+
+
+# ---------------------------------------------------------------------------
+# Purchase Probability (baseline MVP)
+#
+# Scores a lead with the frozen baseline model in purchase_probability_model/.
+# The model reads PostgreSQL READ-ONLY; this service never writes to it.
+#
+# Two things are returned and they are NOT the same thing:
+#   * purchase_probability - the real calibrated model output, as a percentage.
+#     Base rate is ~1.1%, so genuine values sit roughly in 0.3%-4%. It is never
+#     rescaled to look bigger.
+#   * percentile / decile / priority - relative ranking against the frozen
+#     out-of-fold reference. This is the signal to prioritise leads with.
+#
+# Touchpoints in the response are DISPLAY history. Model inputs are reported
+# separately under `model_features`. They must not be conflated.
+# ---------------------------------------------------------------------------
+PURCHASE_PROBABILITY_AVAILABLE = True
+try:
+    from purchase_probability_model import predict_for_lead as _pp_predict
+except Exception as _pp_import_error:  # pragma: no cover - import-time only
+    PURCHASE_PROBABILITY_AVAILABLE = False
+    _PP_IMPORT_ERROR = repr(_pp_import_error)
+    print(f"WARNING: purchase_probability_model unavailable - {_PP_IMPORT_ERROR}")
+
+
+@app.get("/api/purchase-probability/{lead_id}",
+         dependencies=[Depends(require_api_key)])
+async def purchase_probability(lead_id: str):
+    """Calibrated purchase probability, ranking and contributing factors for a lead.
+
+    Follows the house convention: always HTTP 200. When the lead cannot be scored
+    the response carries `fallback: true` and `availability.available: false`
+    rather than a fabricated number. `null` and `0` mean different things here.
+    """
+    if not PURCHASE_PROBABILITY_AVAILABLE:
+        return {
+            "lead_id": lead_id,
+            "purchase_probability": None, "purchase_probability_percent": None,
+            "probability": None, "percentile": None, "decile": None,
+            "priority": "Unavailable", "top_factors": [], "model_features": None,
+            "touchpoint_count": 0, "touchpoints": [],
+            "model": {"name": "purchase_probability", "version": "baseline_mvp",
+                      "status": "baseline_mvp"},
+            "availability": {"available": False,
+                             "reason": "model_artefacts_unavailable",
+                             "message": "Model artefacts are not available on this server."},
+            "fallback": True, "reason": "model_artefacts_unavailable",
+        }
+
+    # Inference is synchronous (psycopg + sklearn); keep it off the event loop.
+    return await run_in_threadpool(_pp_predict, lead_id)
 
 
 if __name__ == "__main__":
