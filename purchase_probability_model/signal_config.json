@@ -1,0 +1,133 @@
+{
+  "signal_version": "heuristic_v1",
+  "basis": "hand-set bounded priors. NOT trained, NOT calibrated, NOT fitted on any data.",
+  "why_not_trained": [
+    "tracking_events and tracking_visitors are empty (0 rows) - there is no behavioural history to train on.",
+    "touchpoint_events ad_click rows are 100% backdated (234/234 written at or after payment), so they cannot be used as a trained conversion feature without reading the receipt.",
+    "These weights therefore express a documented product prior, applied as a bounded adjustment on top of the calibrated base model - never blended into it."
+  ],
+  "double_counting_caveat": "f_seniority, f_email_class and f_locale are already inputs to the calibrated base model. The brand_brain layer re-reads them to ask a different question (does this lead match THIS brand's declared ICP, rather than the global base rate). Weights are deliberately small for that reason.",
+
+  "window": {
+    "backdate_tolerance_seconds": 3600,
+    "pre_lead_lookback_days": 90,
+    "max_events": 2000
+  },
+
+  "engagement": {
+    "max_total_adjustment": [-0.75, 1.75],
+    "weights": {
+      "ad_click_arrival": 0.35,
+      "click_volume": 0.30,
+      "high_intent_pages": 0.45,
+      "page_view_volume": 0.15,
+      "session_return": 0.30,
+      "recency": 0.60,
+      "engagement_velocity": 0.20
+    },
+    "saturation": {
+      "click_volume_at": 6,
+      "high_intent_pages_at": 3,
+      "page_view_volume_at": 10,
+      "session_return_at": 3,
+      "engagement_velocity_at": 4
+    },
+    "recency_half_life_hours": {
+      "fraction_of_sales_cycle": 0.25,
+      "min": 6,
+      "max": 720,
+      "default_when_cycle_unknown": 72
+    }
+  },
+
+  "brand_brain": {
+    "max_total_adjustment": [-0.75, 1.25],
+    "weights": {
+      "icp_seniority_fit": 0.45,
+      "channel_fit": 0.30,
+      "business_type_email_fit": 0.25,
+      "language_locale_fit": 0.20,
+      "sales_cycle_timing": 0.35
+    },
+    "mismatch_scale": 0.5,
+    "sales_cycle_timing_softness": 2.0
+  },
+
+  "event_classification": {
+    "click_names": "(click|cta|button|tap|link_?out|outbound)",
+    "page_view_names": "(page_?view|pageview|screen_?view|view_?page)",
+    "form_names": "(form|submit|lead|signup|sign_?up|register)",
+    "high_intent_paths": "(pricing|plans?|demo|book|calendar|schedule|checkout|cart|contact|trial|sign_?up|signup|buy|purchase|enrol|enroll|apply|quote|consultation)",
+    "high_intent_event_names": "(add_?to_?cart|begin_?checkout|initiate_?checkout|book|demo|schedule|quote|call_?click|whatsapp_?click|phone_?click)"
+  },
+
+  "channel_aliases": {
+    "meta": ["meta", "facebook", "fb", "instagram", "ig", "meta (facebook + instagram)", "facebook + instagram"],
+    "google": ["google", "google search", "google ads", "adwords", "search", "sem", "gdn", "google display"],
+    "youtube": ["youtube", "yt", "video"],
+    "linkedin": ["linkedin", "li"],
+    "email": ["email", "e-mail", "newsletter", "mailer", "klaviyo", "mailchimp"],
+    "organic": ["organic", "seo", "organic search", "direct", "referral", "blog", "content"],
+    "whatsapp": ["whatsapp", "wa", "wati"],
+    "affiliate": ["affiliate", "partner", "influencer"],
+    "offline": ["offline", "event", "webinar", "print", "tv", "radio"]
+  },
+
+  "icp_seniority_keywords": {
+    "founder_c_level": "(cxo|c-?level|c-?suite|ceo|cto|cmo|cfo|coo|chief|founder|co-?founder|owner|proprietor|promoter|partner|president|chairman|md\b|managing director|business owner|entrepreneur)",
+    "vp_director": "(vp\b|vice president|avp|head of|director|department head)",
+    "manager": "(manager|team lead|team-lead|supervisor|senior professional)",
+    "individual_contributor": "(individual contributor|executive assistant|analyst|associate|engineer|developer|designer|freelancer|consultant working)",
+    "other": "(student|fresher|graduate|intern|job seeker|beginner|aspirant)"
+  },
+  "icp_seniority_rank": {
+    "founder_c_level": 4,
+    "vp_director": 3,
+    "manager": 2,
+    "individual_contributor": 1,
+    "other": 0
+  },
+
+  "business_type_b2b": "(b2b|saas|software|agency|consult|enterprise|services|it |technology|staffing|recruit|manufactur|wholesale|distribut|logistics|fintech|professional)",
+  "business_type_b2c": "(b2c|d2c|ecommerce|e-commerce|retail|consumer|fashion|beauty|food|fitness|gym|travel|hospitality|real estate|health ?care clinic)",
+
+  "sales_cycle_units": {
+    "hour": 0.0417,
+    "day": 1,
+    "week": 7,
+    "month": 30,
+    "quarter": 90,
+    "year": 365
+  },
+  "sales_cycle_phrases": {
+    "same day": 1,
+    "immediate": 1,
+    "instant": 1,
+    "on the spot": 1,
+    "within a day": 1,
+    "few days": 4,
+    "a few weeks": 21,
+    "few weeks": 21,
+    "few months": 90,
+    "several months": 120,
+    "varies": null,
+    "not sure": null,
+    "unknown": null
+  },
+  "sales_cycle_default_days": 30,
+
+  "labels": {
+    "e_ad_click_arrival": "Arrived from a paid ad click",
+    "e_click_volume": "On-site click activity",
+    "e_high_intent_pages": "High-intent page visits",
+    "e_page_view_volume": "Pages viewed",
+    "e_session_return": "Returning sessions",
+    "e_recency": "Recency of last activity",
+    "e_engagement_velocity": "Activity per active day",
+    "b_icp_seniority_fit": "Fit with the brand's ideal customer",
+    "b_channel_fit": "Acquisition channel the brand invests in",
+    "b_business_type_email_fit": "Contact type vs the brand's business model",
+    "b_language_locale_fit": "Language alignment with the brand",
+    "b_sales_cycle_timing": "Lead age vs the brand's sales cycle"
+  }
+}

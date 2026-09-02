@@ -18,12 +18,13 @@ Your React frontend POSTs to:
 
 import os
 import json
+import functools
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Depends, Security
+from fastapi import FastAPI, HTTPException, Depends, Query, Security
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
@@ -889,40 +890,132 @@ async def test_script(body: ScriptTestRequest):
 
 
 # ---------------------------------------------------------------------------
-# Purchase Probability (baseline MVP)
+# Purchase Probability (baseline MVP + signal layers)
 #
 # Scores a lead with the frozen baseline model in purchase_probability_model/.
 # The model reads PostgreSQL READ-ONLY; this service never writes to it.
 #
-# Two things are returned and they are NOT the same thing:
+# THREE things are returned and they are NOT the same thing:
 #   * purchase_probability - the real calibrated model output, as a percentage.
 #     Base rate is ~1.1%, so genuine values sit roughly in 0.3%-4%. It is never
-#     rescaled to look bigger.
-#   * percentile / decile / priority - relative ranking against the frozen
-#     out-of-fold reference. This is the signal to prioritise leads with.
+#     rescaled to look bigger, and the layers below never touch it.
+#   * engagement / brand_brain - what the lead has DONE (admissible clicks and
+#     journey timeline) and how well it fits what the brand said it wants (the
+#     Brand Brain document from MongoDB). Both are bounded heuristic priors.
+#   * lead_priority - the ranking signal those layers produce. Sort your list on
+#     this; quote purchase_probability as the probability. It reports
+#     `calibrated: false` about itself, because it is.
 #
-# Touchpoints in the response are DISPLAY history. Model inputs are reported
-# separately under `model_features`. They must not be conflated.
+#   * lead_summary - the CRM lead card: score, temperature, realised revenue,
+#     days to convert, and an estimated lifetime value. Read off the leads table,
+#     so it is present even when the model cannot score the lead. None of it is a
+#     model input: these columns are mutated at payment time and leak the outcome.
+#     `lead_score` is the CRM's engagement score out of 100 and is NOT a
+#     probability - showing it as one is the exact confusion this endpoint exists
+#     to remove.
+#
+# Touchpoints in the response are DISPLAY history. Base-model inputs are reported
+# under `model_features`, layer inputs under each layer. Never conflate them.
 # ---------------------------------------------------------------------------
 PURCHASE_PROBABILITY_AVAILABLE = True
 try:
-    from purchase_probability_model import predict_for_lead as _pp_predict
+    from purchase_probability_model import (
+        predict_for_lead as _pp_predict,
+        resolve_brand_brain_ref as _pp_brand_ref,
+    )
 except Exception as _pp_import_error:  # pragma: no cover - import-time only
     PURCHASE_PROBABILITY_AVAILABLE = False
     _PP_IMPORT_ERROR = repr(_pp_import_error)
     print(f"WARNING: purchase_probability_model unavailable - {_PP_IMPORT_ERROR}")
 
 
+def _pp_dead_layers(message: str) -> dict:
+    """Layer and lead-card blocks for the import-failed path, matching the live
+    response shape.
+
+    Unlike the in-package unavailable paths, this one cannot fill the lead card:
+    the inference package failed to import, so there is no database connection to
+    read the lead row with. Everything is null and says why.
+    """
+    empty = {"available": False, "reason": "model_artefacts_unavailable",
+             "message": message, "factors": [], "total_applied": 0.0,
+             "total_raw": 0.0, "clamped": False, "bounds": None}
+    return {
+        "lead_summary": {
+            "available": False, "reason": "model_artefacts_unavailable",
+            "message": message,
+            "lead_score": None, "lead_score_max": 100, "temperature": None,
+            "status": None, "stage": None, "source": None, "created_at": None,
+            "touchpoint_count": None, "total_revenue": None, "currency": None,
+            "payment_count": 0, "converted": None, "converted_at": None,
+            "days_to_convert": None,
+            "lifetime_value": {
+                "amount": None, "currency": None, "estimated": True,
+                "available": False, "reason": "model_artefacts_unavailable",
+                "basis": None, "expected_amount": None,
+                "potential_amount": None, "potential_basis": None,
+                "probability_used": None, "order_value_used": None,
+                "order_value_basis": None, "order_count": None,
+                "average_order_value": None, "median_order_value": None},
+            "basis": "lead row could not be read",
+        },
+        "lead_score": None, "temperature": None, "total_revenue": None,
+        "days_to_convert": None, "lifetime_value": None,
+        "engagement": {**empty, "observed": None, "channel": None, "window": None,
+                       "timeline": [], "sources": None,
+                       "recency_half_life_hours": None},
+        "brand_brain": {**empty, "brand_brain_id": None, "profile": None},
+        "lead_priority": {"probability": None, "probability_percent": None,
+                          "score": None, "percentile": None, "decile": None,
+                          "priority": "Unavailable", "calibrated": False,
+                          "layers_applied": [], "basis": "no layers applied",
+                          "log_odds": None},
+        "ranking_factors": [], "signal_version": None,
+    }
+
+
+async def _load_brand_brain(brand_brain_id: Optional[str]) -> Optional[dict]:
+    """Fetch the Brand Brain document. Async so the Mongo round trip does not
+    block the event loop, and so the inference package never needs a Mongo driver.
+
+    A missing document is not an error: the brand-fit layer simply reports
+    `no_brand_brain` and contributes nothing to the score.
+    """
+    if not brand_brain_id or brand_brains is None:
+        return None
+    try:
+        return await brand_brains.find_one({"_id": brand_brain_id})
+    except Exception:
+        return None
+
+
 @app.get("/api/purchase-probability/{lead_id}",
          dependencies=[Depends(require_api_key)])
-async def purchase_probability(lead_id: str):
-    """Calibrated purchase probability, ranking and contributing factors for a lead.
+async def purchase_probability(
+    lead_id: str,
+    brand_brain_id: Optional[str] = Query(
+        None,
+        description="Override the Brand Brain used for brand-fit context. Normally "
+                    "omitted - it is resolved from the lead's brand automatically."),
+):
+    """Purchase probability, engagement, brand fit, ranking and the lead card.
 
     Follows the house convention: always HTTP 200. When the lead cannot be scored
     the response carries `fallback: true` and `availability.available: false`
-    rather than a fabricated number. `null` and `0` mean different things here.
+    rather than a fabricated number. `null` and `0` mean different things here,
+    and so do a layer that found nothing (`available: false`) and a layer that
+    found something bad (a negative contribution).
+
+    `lead_summary` (mirrored as `lead_score`, `temperature`, `total_revenue`,
+    `days_to_convert` and `lifetime_value` at the top level) is the CRM lead card.
+    It comes from the leads table, not the model, so it stays populated on an
+    unscorable lead - only the probability goes null. `lead_score` is the CRM's
+    0-100 engagement score; rendering it as a purchase probability is wrong, and
+    `lifetime_value` is an estimate (probability x the brand median order), not
+    money received - `total_revenue` is the money actually received.
     """
     if not PURCHASE_PROBABILITY_AVAILABLE:
+        message = "Model artefacts are not available on this server."
         return {
             "lead_id": lead_id,
             "purchase_probability": None, "purchase_probability_percent": None,
@@ -933,12 +1026,35 @@ async def purchase_probability(lead_id: str):
                       "status": "baseline_mvp"},
             "availability": {"available": False,
                              "reason": "model_artefacts_unavailable",
-                             "message": "Model artefacts are not available on this server."},
+                             "message": message},
             "fallback": True, "reason": "model_artefacts_unavailable",
+            **_pp_dead_layers(message),
         }
 
+    # Resolve which Brand Brain belongs to this lead's brand, then load it from
+    # Mongo. Both steps are skipped when Mongo is not configured, so the endpoint
+    # costs exactly what it used to on deployments without a Brand Brain store.
+    ref: dict = {}
+    brand_brain: Optional[dict] = None
+    if brand_brains is not None:
+        ref = await run_in_threadpool(_pp_brand_ref, lead_id)
+        brand_brain = await _load_brand_brain(brand_brain_id or ref.get("brand_brain_id"))
+
     # Inference is synchronous (psycopg + sklearn); keep it off the event loop.
-    return await run_in_threadpool(_pp_predict, lead_id)
+    result = await run_in_threadpool(
+        functools.partial(_pp_predict, lead_id, brand_brain=brand_brain))
+
+    # Say which brand we looked at even when it has no Brand Brain, so the UI can
+    # explain the gap ("Brand X has not completed onboarding") instead of showing
+    # an unexplained empty panel.
+    block = result.get("brand_brain")
+    if isinstance(block, dict):
+        block["brand_id"] = ref.get("brand_id")
+        block["brand_name"] = ref.get("brand_name")
+        block["resolved_brand_brain_id"] = brand_brain_id or ref.get("brand_brain_id")
+        block["brand_brain_store"] = (
+            "configured" if brand_brains is not None else "not_configured")
+    return result
 
 
 if __name__ == "__main__":

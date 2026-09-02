@@ -1,0 +1,629 @@
+{
+  "info": {
+    "_postman_id": "b7f1c2de-4a6e-4f2b-9c11-purchaseprob01",
+    "name": "ScaleSerum — Purchase Probability",
+    "description": "Purchase probability + engagement (clicks & timeline) + Brand Brain fit.\n\nSETUP\n1. Start the API:  PORT=3002 python -m uvicorn app:app --host 127.0.0.1 --port 3002\n2. Open this collection's Variables tab and paste your API_KEY (from .env) into `apiKey`.\n3. Run the whole collection (Run collection) — every request carries assertions.\n\nWHAT TO LOOK FOR\n`purchase_probability` is the calibrated model output and is NEVER moved by the layers.\n`lead_priority.score` is the ranking signal (uncalibrated by design) — sort lead lists on it.\nRequest 3 proves both at once: same lead, Brand Brain applied, probability identical, ranking moved.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "X-API-Key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{apiKey}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:3002",
+      "type": "string",
+      "description": "Port 3001 may be an older server instance — use 3002 or restart 3001."
+    },
+    {
+      "key": "apiKey",
+      "value": "",
+      "type": "string",
+      "description": "PASTE YOUR KEY HERE. Value of API_KEY in .env. Left blank on purpose so no secret is committed."
+    },
+    {
+      "key": "leadEngaged",
+      "value": "a376f7eb-70ac-4e98-a735-fc7ef2bcd9fc",
+      "type": "string",
+      "description": "Scores 2.68%. 98 admissible events over 58 active days — the engagement layer fires."
+    },
+    {
+      "key": "leadScored",
+      "value": "297bf238-307a-4a71-98e6-0495492326e1",
+      "type": "string",
+      "description": "Scores 1.94%. A plain scorable lead."
+    },
+    {
+      "key": "leadNoForm",
+      "value": "00004b77-a7b1-4137-a7cf-6318295b1415",
+      "type": "string",
+      "description": "No touchpoints at all -> no_admissible_form_payload."
+    },
+    {
+      "key": "leadDI",
+      "value": "eb923100-5b5e-4e52-a5ab-aac16c13fe90",
+      "type": "string",
+      "description": "Belongs to brand DI, the only brand with a brand_brain_id."
+    },
+    {
+      "key": "leadMissing",
+      "value": "00000000-0000-0000-0000-000000000001",
+      "type": "string",
+      "description": "Valid UUID, no such row -> lead_not_found."
+    },
+    {
+      "key": "brandBrainId",
+      "value": "4624afab35ce40dba54582a9f0a88488",
+      "type": "string",
+      "description": "DI's Brand Brain: B2B, targets CXO/founders, buys google/meta/youtube, 'Same day' sales cycle."
+    },
+    {
+      "key": "leadCard",
+      "value": "2506ece9-492c-4c14-ac07-8c4fe046d2b6",
+      "type": "string",
+      "description": "Jarupla Govindu - the lead in the CRM screenshot. Score 25/100, cold, no payments."
+    },
+    {
+      "key": "leadConverted",
+      "value": "f77e66d8-c641-4b2a-9e54-5cc4700fc3e8",
+      "type": "string",
+      "description": "A lead that actually paid: score 90, hot, INR 30,000 revenue, 87 days to convert."
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Health (no auth required)",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        },
+        "description": "Confirms the server is up. This endpoint is deliberately open — no API key."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('reports ok', () => pm.expect(pm.response.json().ok).to.eql(true));",
+              "if (!pm.collectionVariables.get('apiKey')) {",
+              "  console.warn('apiKey variable is empty — set it in the Variables tab or every other request returns 401.');",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Auth — wrong key returns 401",
+      "request": {
+        "auth": {
+          "type": "apikey",
+          "apikey": [
+            {
+              "key": "key",
+              "value": "X-API-Key",
+              "type": "string"
+            },
+            {
+              "key": "value",
+              "value": "definitely-not-the-key",
+              "type": "string"
+            },
+            {
+              "key": "in",
+              "value": "header",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/purchase-probability/{{leadScored}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "purchase-probability",
+            "{{leadScored}}"
+          ]
+        },
+        "description": "Auth is enforced on every /api/* route. A bad key is one of the few cases that is NOT HTTP 200."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Scored lead — both layers active",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/purchase-probability/{{leadEngaged}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "purchase-probability",
+            "{{leadEngaged}}"
+          ]
+        },
+        "description": "A lead with real behavioural history (98 admissible events). Both layers fire: the engagement layer from its click/timeline history, and the brand layer because this lead's brand (Lawtorney) has since onboarded and is auto-resolved from the lead.\n\nSaves purchase_probability and lead_priority so request 3 can prove the invariant."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "",
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('lead is scorable', () => pm.expect(b.availability.available).to.eql(true));",
+              "",
+              "// The calibrated probability is a real percentage. Base rate is 1.09%,",
+              "// so anything above ~20% would mean it had been rescaled for looks.",
+              "pm.test('probability is calibrated, not inflated', () => {",
+              "  pm.expect(b.probability).to.be.above(0).and.below(0.20);",
+              "  pm.expect(b.purchase_probability).to.be.closeTo(b.probability * 100, 0.01);",
+              "});",
+              "",
+              "pm.test('top_factors are base-model features only', () => {",
+              "  b.top_factors.forEach(f => pm.expect(f.feature).to.match(/^f_/));",
+              "});",
+              "",
+              "pm.test('engagement layer fired', () => {",
+              "  pm.expect(b.engagement.available).to.eql(true);",
+              "  pm.expect(b.engagement.observed.events_total).to.be.above(1);",
+              "});",
+              "",
+              "pm.test('engagement timeline never contains a payment', () => {",
+              "  b.engagement.timeline.forEach(e => pm.expect(e.kind).to.not.eql('payment'));",
+              "});",
+              "",
+              "pm.test('absent signal contributes exactly zero', () => {",
+              "  b.ranking_factors.filter(f => f.status === 'no_data')",
+              "    .forEach(f => pm.expect(f.contribution).to.eql(0));",
+              "});",
+              "",
+              "pm.collectionVariables.set('savedProbability', b.purchase_probability);",
+              "pm.collectionVariables.set('savedPriority', b.lead_priority.probability_percent);",
+              "console.log('calibrated', b.purchase_probability + '%', '| ranking', b.lead_priority.probability_percent + '%');"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Same lead + Brand Brain — the key test",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/purchase-probability/{{leadEngaged}}?brand_brain_id={{brandBrainId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "purchase-probability",
+            "{{leadEngaged}}"
+          ],
+          "query": [
+            {
+              "key": "brand_brain_id",
+              "value": "{{brandBrainId}}",
+              "description": "Override. Normally omitted — the endpoint resolves the Brand Brain from the lead's brand automatically."
+            }
+          ]
+        },
+        "description": "The same lead with an explicit brand_brain_id override.\n\nThis lead's brand now auto-resolves to the SAME Brand Brain document, so the override is a no-op and the whole response must be identical to request 2. That is the assertion: the override is honoured, and it changes nothing it should not.\n\nThe layers are still doing work - lead_priority sits away from the calibrated probability - it just does not depend on how the brand was resolved."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "",
+              "pm.test('brand brain loaded from MongoDB', () => {",
+              "  pm.expect(b.brand_brain.available).to.eql(true);",
+              "  pm.expect(b.brand_brain.profile.sales_cycle_days).to.eql(1);",
+              "  pm.expect(b.brand_brain.profile.target_seniority).to.eql('founder_c_level');",
+              "});",
+              "",
+              "// THE INVARIANT. Brand context must never move the calibrated number.",
+              "pm.test('calibrated probability is UNCHANGED by brand context', () => {",
+              "  const before = Number(pm.collectionVariables.get('savedProbability'));",
+              "  pm.expect(b.purchase_probability).to.eql(before);",
+              "});",
+              "",
+              "// This lead's brand auto-resolves to the same document, so passing it",
+              "// explicitly must change nothing at all.",
+              "pm.test('the override resolves to the brand the lead already had', () => {",
+              "  pm.expect(b.brand_brain.resolved_brand_brain_id)",
+              "    .to.eql(pm.collectionVariables.get('brandBrainId'));",
+              "  const before = Number(pm.collectionVariables.get('savedPriority'));",
+              "  pm.expect(b.lead_priority.probability_percent).to.eql(before);",
+              "});",
+              "",
+              "// ...but the layers are still doing work: the ranking sits away from the",
+              "// calibrated probability, which is the whole point of keeping them apart.",
+              "pm.test('the ranking is adjusted away from the calibrated probability', () => {",
+              "  pm.expect(b.lead_priority.probability).to.not.eql(b.probability);",
+              "  pm.expect(b.lead_priority.layers_applied)",
+              "    .to.include.members(['engagement','brand_brain']);",
+              "  pm.expect(b.lead_priority.calibrated).to.eql(false);",
+              "});",
+              "",
+              "pm.test('sales cycle drives the recency half-life', () => {",
+              "  pm.expect(b.engagement.recency_half_life_hours.derived_from).to.eql('brand_sales_cycle');",
+              "  pm.expect(b.engagement.recency_half_life_hours.hours).to.eql(6);",
+              "});",
+              "",
+              "pm.test('log-odds arithmetic is self-consistent', () => {",
+              "  const lo = b.lead_priority.log_odds;",
+              "  pm.expect(lo.base + lo.engagement + lo.brand_brain).to.be.closeTo(lo.total, 1e-6);",
+              "  pm.expect(1 / (1 + Math.exp(-lo.total))).to.be.closeTo(b.lead_priority.probability, 1e-6);",
+              "});",
+              "",
+              "pm.test('each layer stays inside its clamp', () => {",
+              "  const lo = b.lead_priority.log_odds;",
+              "  pm.expect(lo.engagement).to.be.within(b.engagement.bounds[0], b.engagement.bounds[1]);",
+              "  pm.expect(lo.brand_brain).to.be.within(b.brand_brain.bounds[0], b.brand_brain.bounds[1]);",
+              "});",
+              "",
+              "console.log('calibrated', b.purchase_probability + '%',",
+              "            '| ranking', b.lead_priority.probability_percent + '%',",
+              "            '| log-odds base', b.lead_priority.log_odds.base,",
+              "            '+ eng', b.lead_priority.log_odds.engagement,",
+              "            '+ brand', b.lead_priority.log_odds.brand_brain);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Unavailable — lead has no admissible form",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/purchase-probability/{{leadNoForm}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "purchase-probability",
+            "{{leadNoForm}}"
+          ]
+        },
+        "description": "House convention: ALWAYS HTTP 200. An unscorable lead returns nulls with a stable reason — never a fabricated 0."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "pm.test('200 OK even when unscorable', () => pm.response.to.have.status(200));",
+              "",
+              "pm.test('null, never a fabricated zero', () => {",
+              "  pm.expect(b.purchase_probability).to.eql(null);",
+              "  pm.expect(b.fallback).to.eql(true);",
+              "  pm.expect(b.availability.reason).to.eql('no_admissible_form_payload');",
+              "});",
+              "",
+              "pm.test('layer keys still present so the UI never branches on existence', () => {",
+              "  ['engagement','brand_brain','lead_priority','ranking_factors','signal_version']",
+              "    .forEach(k => pm.expect(b).to.have.property(k));",
+              "  pm.expect(b.lead_priority.priority).to.eql('Unavailable');",
+              "});",
+              "",
+              "pm.test('layer reason describes the layer, not the base model', () => {",
+              "  pm.expect(b.brand_brain.reason).to.eql('base_model_unavailable');",
+              "  pm.expect(b.brand_brain.reason).to.not.eql(b.availability.reason);",
+              "});",
+              "",
+              "// The model has nothing to say about this lead - but the CRM does.",
+              "// The card must not go blank just because the probability did.",
+              "pm.test('the card survives an unscorable lead', () => {",
+              "  const card = b.lead_summary;",
+              "  pm.expect(card.available).to.eql(true);",
+              "  pm.expect(card.lead_score).to.be.a('number');",
+              "  pm.expect(card.temperature).to.be.a('string');",
+              "  pm.expect(b.lead_score).to.eql(card.lead_score);",
+              "});",
+              "",
+              "pm.test('no probability means no invented lifetime value', () => {",
+              "  pm.expect(b.lifetime_value).to.eql(null);",
+              "  pm.expect(b.lead_summary.lifetime_value.amount).to.eql(null);",
+              "  pm.expect(b.lead_summary.lifetime_value.reason)",
+              "    .to.eql('no_admissible_form_payload');",
+              "  // Deal size does not depend on the model, so it survives.",
+              "  pm.expect(b.lead_summary.lifetime_value.potential_amount).to.be.a('number');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Unavailable — lead not found",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/purchase-probability/{{leadMissing}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "purchase-probability",
+            "{{leadMissing}}"
+          ]
+        },
+        "description": "A valid UUID with no matching row."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('lead_not_found', () => pm.expect(b.availability.reason).to.eql('lead_not_found'));",
+              "pm.test('nothing fabricated', () => {",
+              "  pm.expect(b.probability).to.eql(null);",
+              "  pm.expect(b.top_factors).to.eql([]);",
+              "  pm.expect(b.ranking_factors).to.eql([]);",
+              "});",
+              "",
+              "// No lead row means there is genuinely nothing to show. This is the",
+              "// only fallback where the card is empty too.",
+              "pm.test('missing lead has an empty card of the same shape', () => {",
+              "  pm.expect(b.lead_summary.available).to.eql(false);",
+              "  pm.expect(b.lead_summary.reason).to.eql('lead_not_found');",
+              "  ['lead_score','temperature','total_revenue','days_to_convert','lifetime_value']",
+              "    .forEach(k => pm.expect(b[k], k).to.eql(null));",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Brand auto-resolution (no override)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/purchase-probability/{{leadDI}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "purchase-probability",
+            "{{leadDI}}"
+          ]
+        },
+        "description": "No brand_brain_id in the query. The endpoint resolves it itself:\nleads.brand_id -> brands.brand_brain_id -> MongoDB brand_brains._id\n\nThis lead's brand is DI, which HAS a Brand Brain, so resolved_brand_brain_id is populated even though this particular lead is not scorable."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "",
+              "pm.test('brand resolved from the lead without an override', () => {",
+              "  pm.expect(b.brand_brain.brand_name).to.eql('DI');",
+              "  pm.expect(b.brand_brain.resolved_brand_brain_id).to.eql(pm.collectionVariables.get('brandBrainId'));",
+              "  pm.expect(b.brand_brain.brand_brain_store).to.eql('configured');",
+              "});",
+              "",
+              "console.log('resolved brand:', b.brand_brain.brand_name,",
+              "            '| brand_brain_id:', b.brand_brain.resolved_brand_brain_id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Lead card — the CRM screenshot lead",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/purchase-probability/{{leadCard}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "purchase-probability",
+            "{{leadCard}}"
+          ]
+        },
+        "description": "The exact lead from the CRM screenshot (Jarupla Govindu).\n\nProves the card is served by this endpoint and that lead_score (25/100) and purchase_probability (~1.4%) are different numbers. A UI showing '25%' as the purchase probability is reading leads.score, not the model."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "const card = b.lead_summary;",
+              "",
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('the lead card is populated', () => {",
+              "  pm.expect(card.available).to.eql(true);",
+              "  pm.expect(card.lead_score).to.be.a('number');",
+              "  pm.expect(card.temperature).to.be.a('string');",
+              "});",
+              "",
+              "// The bug this endpoint exists to remove. The CRM badge reads 'cold 25',",
+              "// which is a score out of 100 - NOT a 25% chance of purchase.",
+              "pm.test('lead_score is not the probability', () => {",
+              "  pm.expect(card.lead_score).to.eql(25);",
+              "  pm.expect(card.lead_score_max).to.eql(100);",
+              "  pm.expect(b.purchase_probability).to.be.below(5);",
+              "  pm.expect(b.purchase_probability).to.not.eql(card.lead_score);",
+              "});",
+              "",
+              "pm.test('header tiles are mirrored at the top level', () => {",
+              "  pm.expect(b.lead_score).to.eql(card.lead_score);",
+              "  pm.expect(b.temperature).to.eql(card.temperature);",
+              "  pm.expect(b.total_revenue).to.eql(card.total_revenue);",
+              "  pm.expect(b.days_to_convert).to.eql(card.days_to_convert);",
+              "  pm.expect(b.lifetime_value).to.eql(card.lifetime_value.amount);",
+              "});",
+              "",
+              "// null and 0 are different facts and the API keeps them apart.",
+              "pm.test('no payments yet is 0 revenue, not null', () => {",
+              "  pm.expect(card.total_revenue).to.eql(0);",
+              "  pm.expect(card.payment_count).to.eql(0);",
+              "  pm.expect(card.converted).to.eql(false);",
+              "});",
+              "pm.test('days_to_convert is null, not 0, when unconverted', () => {",
+              "  pm.expect(card.days_to_convert).to.eql(null);",
+              "  pm.expect(card.converted_at).to.eql(null);",
+              "});",
+              "",
+              "pm.test('lifetime value is an estimate and says so', () => {",
+              "  pm.expect(card.lifetime_value.estimated).to.eql(true);",
+              "  pm.expect(card.lifetime_value.basis).to.be.a('string');",
+              "  // probability x the brand's median paid order, recomputable from the response",
+              "  const expected = b.probability * card.lifetime_value.order_value_used;",
+              "  pm.expect(card.lifetime_value.amount).to.be.closeTo(expected, 0.01);",
+              "});",
+              "",
+              "console.log('probability', b.purchase_probability + '%',",
+              "            '| lead_score', card.lead_score + '/100',",
+              "            '| LTV', card.lifetime_value.amount,",
+              "            '| revenue', card.total_revenue);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Lead card — a lead that actually paid",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/purchase-probability/{{leadConverted}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "purchase-probability",
+            "{{leadConverted}}"
+          ]
+        },
+        "description": "A converted lead: revenue, payment count, converted_at and days_to_convert are all real.\n\nShows lifetime_value switching from estimate to recorded revenue, and that the conversion still never reaches the model's inputs."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "const card = b.lead_summary;",
+              "",
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "",
+              "pm.test('realised revenue is reported', () => {",
+              "  pm.expect(card.total_revenue).to.be.above(0);",
+              "  pm.expect(card.payment_count).to.be.above(0);",
+              "  pm.expect(card.converted).to.eql(true);",
+              "  pm.expect(card.converted_at).to.be.a('string');",
+              "});",
+              "",
+              "pm.test('days_to_convert is a real number here', () => {",
+              "  pm.expect(card.days_to_convert).to.be.a('number');",
+              "});",
+              "",
+              "// A lead that has paid is not a forecast any more.",
+              "pm.test('LTV is recorded revenue, not an estimate', () => {",
+              "  pm.expect(card.lifetime_value.estimated).to.eql(false);",
+              "  pm.expect(card.lifetime_value.amount).to.eql(card.total_revenue);",
+              "  pm.expect(card.lifetime_value.basis).to.include('recorded');",
+              "});",
+              "",
+              "// ...but the estimate is kept alongside so open and won leads stay comparable.",
+              "pm.test('the probability-weighted estimate is still reported', () => {",
+              "  pm.expect(card.lifetime_value.expected_amount).to.be.a('number');",
+              "  pm.expect(card.lifetime_value.expected_amount).to.not.eql(card.total_revenue);",
+              "});",
+              "",
+              "// The lead converted, but the model never saw that. Its inputs are the",
+              "// point-in-time form submission only, so the probability stays near base rate.",
+              "pm.test('conversion did not leak into the probability', () => {",
+              "  pm.expect(b.purchase_probability).to.be.below(20);",
+              "});",
+              "",
+              "console.log('revenue', card.total_revenue, '| LTV', card.lifetime_value.amount,",
+              "            '| estimated', card.lifetime_value.estimated,",
+              "            '| days to convert', card.days_to_convert);"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
