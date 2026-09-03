@@ -267,7 +267,10 @@ def test_layers_never_move_the_calibrated_probability(conn, scorable_lead_id):
     assert without["probability"] == with_bb["probability"]
     assert without["purchase_probability"] == with_bb["purchase_probability"]
     assert without["percentile"] == with_bb["percentile"]
-    assert without["top_factors"] == with_bb["top_factors"]
+    # `model_factors` is the calibrated explanation and must be untouched by
+    # brand context. `top_factors` is the merged lead-card list and is EXPECTED
+    # to grow a brand-fit row here - that is the feature, not a regression.
+    assert without["model_factors"] == with_bb["model_factors"]
     assert without["model_features"] == with_bb["model_features"]
 
     # ...but the brand layer did engage, and the ranking signal reflects it.
@@ -278,15 +281,40 @@ def test_layers_never_move_the_calibrated_probability(conn, scorable_lead_id):
 
 
 # ==========================================================================  10
-def test_top_factors_stay_base_model_only(conn, scorable_lead_id):
-    """`top_factors` is the calibrated explanation and must not be diluted."""
+def test_top_factors_declare_what_they_move(conn, scorable_lead_id):
+    """`top_factors` is the merged lead-card list: base-model factors alongside
+    the touchpoint-derived and brand-fit ones.
+
+    Mixing them is safe ONLY because every row says which number it moves. If
+    `affects` is ever dropped, a reader summing the rows would expect them to
+    reach the displayed probability, and they do not. That is what this guards.
+    """
     r = ppm.predict_for_lead(scorable_lead_id, conn=conn, brand_brain=BRAND_BRAIN,
                              now=FIXED_NOW)
     if not r["availability"]["available"]:
         pytest.skip("fixture lead is not scorable")
+
     for f in r["top_factors"]:
-        assert f["feature"].startswith("f_"), "only base-model features belong here"
+        assert f["affects"] in ("purchase_probability", "lead_priority")
+        if f["feature"].startswith("f_"):
+            assert f["affects"] == "purchase_probability"
+        if f["feature"].startswith(("e_", "b_")):
+            assert f["affects"] == "lead_priority", (
+                "unfitted priors must never claim to move the calibrated score")
+
+    # The calibrated explanation is still available on its own, undiluted.
+    assert r["model_factors"], "expected base-model factors"
+    for f in r["model_factors"]:
+        assert f["feature"].startswith("f_")
         assert not f["feature"].startswith(("e_", "b_"))
+
+    # The purchase_probability rows of the merged list ARE the base-model
+    # factors - the merge renames, it never adds to or edits the calibrated set.
+    merged = {f["feature"]: f["contribution"] for f in r["top_factors"]
+              if f["affects"] == "purchase_probability"}
+    base = {f["feature"]: f["contribution"] for f in r["model_factors"]
+            if abs(f["contribution"]) > 1e-12}
+    assert merged == base
 
     # The merged list is where the layers surface, tagged with their provenance.
     layers = {f["layer"] for f in r["ranking_factors"]}

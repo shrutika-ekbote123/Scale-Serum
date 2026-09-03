@@ -229,7 +229,9 @@ Every key below is present on **every** response, including fallbacks. Branch on
 | `percentile` | `int \| null` | 0–100 against the out-of-fold reference population. |
 | `decile` | `int \| null` | 1–10. |
 | `priority` | `string` | `High` (decile 10) · `Medium` (8–9) · `Low` (1–7) · `Unavailable`. |
-| `top_factors` | `array` | Signed per-feature contributions in log-odds, ranked by absolute size. **Base-model features only** — every `feature` starts with `f_`. |
+| `top_factors` | `array` | **The lead-card list.** Plain-language factors from all three layers — base model, touchpoint history, brand fit — ranked by absolute contribution. Every row carries `affects`; see below. |
+| `why` | `object \| null` | The header for the factor panel: the base rate the score starts from, the result, and the caveat about summing rows. `null` when the lead is unscorable. |
+| `model_factors` | `array` | The calibrated explanation on its own — exactly the `f_*` factors that sum, in log-odds, to `probability`. **Use this, not `top_factors`, for any arithmetic.** |
 | `model_features` | `object \| null` | Exactly what the model consumed: the 7 V1 features, their values, and the form submission they came from. |
 | `model` | `object` | Model name, version, status, feature version, description. |
 | `scored_at` | `string` | ISO timestamp. One clock is used for every time-based factor in the response. |
@@ -459,7 +461,7 @@ Every entry in `top_factors`, `ranking_factors` and each layer's `factors` has t
 | Field | Description |
 |---|---|
 | `feature` | Stable identifier. `f_*` = base model, `e_*` = engagement, `b_*` = brand fit. |
-| `label` | Human-readable name. Safe to display. |
+| `label` | **The line to print.** `"<what was observed> - <why that matters>"`, e.g. `"Founder or C-level contact - senior decision-maker"`. It answers "why did this move the score" on its own, with no tooltip. It used to name the model input (`"Lead locale"`), which told a salesperson nothing; that is a regression a test now blocks. |
 | `layer` | `model` · `engagement` · `brand_brain`. |
 | `basis` | `calibrated_model` · `heuristic`. |
 | `status` | `observed` · `no_data` · `not_applicable`. |
@@ -467,6 +469,64 @@ Every entry in `top_factors`, `ranking_factors` and each layer's `factors` has t
 | `contribution` | Signed, in log-odds. |
 | `direction` | `positive` · `negative` · `neutral`. |
 | `explanation` | Deliberately **non-causal** — "contributed to", never "caused". Safe to show to a salesperson verbatim. |
+
+### Plain-language fields (rendering `top_factors`)
+
+Entries in `top_factors` carry these extra fields. They are presentation only —
+no number here is new, and `contribution` is passed through untouched.
+
+**The frontend needs no change to benefit from this** — `label` already carries
+the full reason, so an existing card that renders `label` becomes readable on
+deploy. The fields below are extras for a richer panel.
+
+| Field | Description |
+|---|---|
+| `title` | The observed half of `label` on its own: `"Founder or C-level contact"`. Use when you want the reason on a second line. |
+| `detail` | One sentence a salesperson can read. For touchpoint factors it leads with what was measured — `"Last active 22 hours ago."` |
+| `impact` | `Strong positive` · `Moderate positive` · `Slight positive` and the negative equivalents. Use this, not the raw log-odds, in the UI. |
+| `odds_multiplier` | `exp(contribution)`. `1.65` reads as "about 1.65× the odds". The same quantity as `contribution`, in a unit people understand. |
+| `source` | `Form submission` · `Touchpoint history` · `Brand profile`. Where the evidence came from. |
+| `affects` | **Do not drop this.** `purchase_probability` or `lead_priority` — see below. |
+
+#### ⚠️ `affects` — why the rows do not add up
+
+`top_factors` mixes two kinds of row:
+
+- **`affects: "purchase_probability"`** — base-model factors. These sum, in
+  log-odds, to the calibrated score on screen.
+- **`affects: "lead_priority"`** — engagement and brand-fit factors. These are
+  bounded, **unfitted** priors. They move the ranking score, **not** the
+  probability.
+
+A user who sums every row expecting the displayed percentage will be wrong. Show
+`source` or `affects` on the row, or group the two kinds under separate
+subheadings. `why.reading_note` carries this caveat in prose.
+
+Factors that contributed nothing are dropped rather than shown as zero — an
+absent signal is reported by its layer's `available: false`, not as a `0` row.
+
+### The `why` block
+
+```json
+{
+  "starting_point": { "label": "Base rate - all leads", "percent": 1.09,
+                      "detail": "1.09% of leads purchase within 21 days." },
+  "result":         { "label": "Purchase probability", "percent": 2.68 },
+  "reading_note":   "Factors marked purchase_probability sum, in log-odds, ..."
+}
+```
+
+`starting_point.percent` is the **measured** conversion rate of the training
+snapshot (160 / 14,692), not a design constant. Do not replace it with a
+round number to make the panel add up more neatly.
+
+### Editing the copy
+
+All wording lives in `purchase_probability_model/factor_language.json`. Changing
+a title or a sentence needs no code change and cannot alter a score. The one
+rule: sentences describe **associations**, never causes — a logistic regression
+on observational data cannot support "caused", "because" or "drives", and
+`tests/test_purchase_probability_explanations.py` fails the build if one appears.
 
 ---
 

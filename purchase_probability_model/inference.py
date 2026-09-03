@@ -40,6 +40,7 @@ from typing import Any, Optional
 from . import behavioural as _behavioural
 from . import blend as _blend
 from . import brand_fit as _brand_fit
+from . import explain as _explain
 
 PKG_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -660,6 +661,8 @@ def _unavailable(lead_id: str, reason: str, touchpoints: Optional[list] = None,
         "decile": None,
         "priority": "Unavailable",
         "top_factors": [],
+        "why": None,
+        "model_factors": [],
         "model_features": None,
         "touchpoint_count": len(tps),
         "touchpoints": tps,
@@ -969,6 +972,18 @@ def predict_for_lead(lead_id: str, conn=None, brand_brain: Optional[dict] = None
 
     summary = _lead_summary(card, touchpoints, order_stats, prob)
 
+    # The lead card's factor list: base-model factors plus the touchpoint-derived
+    # engagement factors and the brand-fit factors, rendered in plain language.
+    # Each row carries `affects`, because only the base-model rows sum to
+    # `purchase_probability` - see explain.py for why that field is not optional.
+    top_factors = _explain.merge_top_factors(
+        model_factors,
+        (layers.get("engagement") or {}).get("factors"),
+        (layers.get("brand_brain") or {}).get("factors"),
+        features,
+        (layers.get("engagement") or {}).get("observed"),
+    )
+
     return {
         "lead_id": str(lead_id),
         # Calibrated probability expressed as a percentage. 2.3 means 2.3%.
@@ -980,9 +995,16 @@ def predict_for_lead(lead_id: str, conn=None, brand_brain: Optional[dict] = None
         "percentile": int(round(percentile)),
         "decile": decile,
         "priority": _priority_of(decile, art["decile_bands"]),
-        # Base-model factors only, unchanged. Engagement and brand-fit factors are
-        # reported in their own layers and merged into `ranking_factors`.
-        "top_factors": model_factors,
+        # Plain-language, all layers, each row tagged with what it moves. The
+        # untouched base-model-only list is still available as `model_factors`
+        # below, and the raw merged list as `ranking_factors`.
+        "top_factors": top_factors,
+        "why": _explain.baseline_block(
+            art["metadata"], art["schema"].get("constants"), prob),
+        # The calibrated explanation on its own: exactly the factors that sum, in
+        # log-odds, to `probability`. Unchanged by the presentation layer, and by
+        # the brand brain. Use this, not `top_factors`, for any arithmetic.
+        "model_factors": model_factors,
         "model_features": {
             "feature_version": art["schema"]["feature_version"],
             "values": features,

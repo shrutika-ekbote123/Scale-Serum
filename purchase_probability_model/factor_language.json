@@ -1,0 +1,213 @@
+{
+  "language_version": "plain_v2",
+  "purpose": "Presentation copy only. Nothing here changes a probability, a coefficient or a ranking. It renames and explains factors that already exist, so a salesperson can read them.",
+
+  "label_contract": "`label` is the ONE LINE the lead card prints. It must answer 'why did this factor move the score' on its own, with no tooltip and no second field. Shape: '<what was observed> - <why that matters>'. It replaces the old technical names ('Lead locale'), which named the input instead of giving the reason.",
+
+  "non_causal_rule": "Every sentence describes an ASSOCIATION observed in training data. Never 'caused', 'because', 'due to', 'drives' or 'makes'. A logistic coefficient is not a cause.",
+
+  "comparison_note": "Categorical factors are scored against a reference level, so their wording is comparative on purpose: seniority against an individual contributor, email against Gmail, locale against India. 'Converts above Gmail' is the literal meaning of the coefficient - do not reword it into an absolute claim.",
+
+  "impact_bands": [
+    { "min_abs": 0.5, "word": "Strong" },
+    { "min_abs": 0.2, "word": "Moderate" },
+    { "min_abs": 0.0, "word": "Slight" }
+  ],
+
+  "sources": {
+    "model": "Form submission",
+    "engagement": "Touchpoint history",
+    "brand_brain": "Brand profile"
+  },
+
+  "affects": {
+    "model": "purchase_probability",
+    "engagement": "lead_priority",
+    "brand_brain": "lead_priority"
+  },
+
+  "features": {
+    "f_seniority": {
+      "title": "Job seniority",
+      "values": {
+        "founder_c_level": {
+          "title": "Founder or C-level contact",
+          "reason": "senior decision-maker",
+          "detail": "Founders and C-level contacts convert more often than individual contributors."
+        },
+        "vp_director": {
+          "title": "VP or Director-level contact",
+          "reason": "senior decision-maker",
+          "detail": "VP and Director-level contacts convert more often than individual contributors."
+        },
+        "manager": {
+          "title": "Manager-level contact",
+          "reason": "mid-level authority, close to the individual-contributor rate",
+          "detail": "Manager-level contacts convert at close to the same rate as individual contributors."
+        },
+        "individual_contributor": {
+          "title": "Individual contributor",
+          "reason": "the comparison point for seniority",
+          "detail": "This is the most common role in the data and is used as the comparison point."
+        },
+        "other": {
+          "title": "Student or early-career contact",
+          "reason": "rarely the person who buys",
+          "detail": "Students and early-career contacts convert less often than individual contributors."
+        }
+      }
+    },
+
+    "f_email_class": {
+      "title": "Type of email address",
+      "values": {
+        "corporate": {
+          "title": "Work email address",
+          "reason": "converts above Gmail",
+          "detail": "Leads who sign up with a work email convert more often than those using Gmail."
+        },
+        "other_freemail": {
+          "title": "Personal email (Yahoo, Outlook, iCloud)",
+          "reason": "converts above Gmail",
+          "detail": "These addresses convert more often than Gmail in the training data."
+        },
+        "gmail": {
+          "title": "Gmail address",
+          "reason": "the comparison point for email type",
+          "detail": "Gmail is the most common address type in the data and is used as the comparison point."
+        }
+      }
+    },
+
+    "f_locale": {
+      "title": "Where the lead is browsing from",
+      "values": {
+        "en-US": {
+          "title": "Browsing from the United States",
+          "reason": "converts above the India baseline",
+          "detail": "US leads convert more often than leads in India."
+        },
+        "en-GB": {
+          "title": "Browsing from the United Kingdom",
+          "reason": "level with the India baseline",
+          "detail": "UK leads convert at close to the same rate as leads in India."
+        },
+        "en": {
+          "title": "English locale, region not reported",
+          "reason": "converts above the India baseline",
+          "detail": "Leads whose browser reports plain English convert more often than leads in India."
+        },
+        "other": {
+          "title": "Locale outside the main regions",
+          "reason": "converts above the India baseline",
+          "detail": "Leads from other locales convert more often than leads in India."
+        },
+        "en-IN": {
+          "title": "Browsing from India",
+          "reason": "the comparison point for locale",
+          "detail": "India is the most common locale in the data and is used as the comparison point."
+        }
+      }
+    },
+
+    "f_company_len": {
+      "title": "Company details filled in",
+      "label_positive": "Company field filled to {value} characters - fuller detail converts slightly better",
+      "label_negative": "Company field only {value} characters - sparse detail converts slightly worse",
+      "label_zero": "No company name provided",
+      "detail_positive": "The company field has {value} characters. Leads who fill this in more fully convert slightly more often.",
+      "detail_negative": "The company field has only {value} characters. Leads who leave it sparse convert slightly less often.",
+      "detail_zero": "No company name was provided."
+    },
+
+    "f_company_is_placeholder": {
+      "title": "Company field looks like a placeholder",
+      "label_positive": "Company field is filler text such as 'na' or 'test' - these leads convert less often",
+      "label_negative": "Company field is filler text such as 'na' or 'test' - these leads convert less often",
+      "detail_positive": "The company field contains filler text such as 'na' or 'test'. These leads convert less often.",
+      "detail_negative": "The company field contains filler text such as 'na' or 'test'. These leads convert less often."
+    },
+
+    "f_hour_time_pattern": {
+      "title": "Time of day the form was submitted",
+      "label": "Submitted around {hour} - {window_reason}",
+      "detail": "Submitted at around {hour}. {window_note}",
+      "window_reasons": {
+        "night": "overnight sign-ups convert less often",
+        "morning": "morning sign-ups convert close to the average",
+        "afternoon": "afternoon sign-ups convert more often than overnight ones",
+        "evening": "evening sign-ups convert close to the average"
+      },
+      "windows": {
+        "night": "Overnight sign-ups convert less often than daytime ones.",
+        "morning": "Morning sign-ups convert at close to the average rate.",
+        "afternoon": "Afternoon sign-ups convert more often than overnight ones.",
+        "evening": "Evening sign-ups convert at close to the average rate."
+      }
+    }
+  },
+
+  "signals": {
+    "e_ad_click_arrival": {
+      "title": "Arrived from a paid ad click",
+      "reason": "higher intent than a cold arrival",
+      "detail": "This lead reached the site through a paid ad rather than arriving cold."
+    },
+    "e_click_volume": {
+      "title": "Clicked things on the site",
+      "reason": "active rather than passive browsing",
+      "detail": "Clicking buttons and calls-to-action is a stronger signal than passive reading."
+    },
+    "e_high_intent_pages": {
+      "title": "Visited high-intent pages",
+      "reason": "pricing and checkout pages sit close to a buying decision",
+      "detail": "Pages such as pricing, checkout, booking or demo are visited close to a buying decision."
+    },
+    "e_page_view_volume": {
+      "title": "Browsed multiple pages",
+      "reason": "browsing depth separates a visitor from a bounce",
+      "detail": "Depth of browsing separates a serious visitor from a bounce."
+    },
+    "e_session_return": {
+      "title": "Came back after the first visit",
+      "reason": "sustained interest rather than a single impulse",
+      "detail": "Returning later shows sustained interest rather than a single impulse."
+    },
+    "e_recency": {
+      "title": "Recently active",
+      "reason": "measured against this brand's own sales cycle, not a fixed number of days",
+      "detail": "Interest goes stale. This is measured against the brand's own sales cycle, not a fixed number of days."
+    },
+    "e_engagement_velocity": {
+      "title": "Activity was concentrated",
+      "reason": "a burst reads differently from the same activity spread thin",
+      "detail": "A burst of activity in a short window reads differently from the same activity spread thin."
+    },
+
+    "b_icp_seniority_fit": {
+      "title": "Fit with the brand's ideal customer",
+      "reason": "compared against the seniority this brand named during onboarding",
+      "detail": "Compared against the seniority this brand named as its ideal customer during onboarding."
+    },
+    "b_channel_fit": {
+      "title": "Acquisition channel fit",
+      "reason": "compared against the channels this brand invests in",
+      "detail": "Compared against the acquisition channels this brand named during onboarding."
+    },
+    "b_business_type_email_fit": {
+      "title": "Contact type vs the brand's business model",
+      "reason": "a B2B brand expects work emails, a B2C brand expects personal ones",
+      "detail": "A B2B brand expects work emails; a B2C brand expects personal ones."
+    },
+    "b_language_locale_fit": {
+      "title": "Language fit with the brand's market",
+      "reason": "compared against the market this brand named during onboarding",
+      "detail": "Compared against the market this brand named during onboarding."
+    },
+    "b_sales_cycle_timing": {
+      "title": "Lead age against the brand's sales cycle",
+      "reason": "a two-week-old lead is fresh for a six-month cycle and stale for a same-day one",
+      "detail": "A two-week-old lead is fresh for a six-month cycle and stale for a same-day one."
+    }
+  }
+}
