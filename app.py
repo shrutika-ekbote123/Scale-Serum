@@ -19,12 +19,14 @@ Your React frontend POSTs to:
 import os
 import json
 import functools
+import logging
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import List, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Depends, Query, Security
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Depends, Query, Security
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
@@ -69,9 +71,16 @@ MONGODB_DB = os.environ.get("MONGODB_DB", "scaleserum")
 if MONGODB_URI:
     mongo_client = AsyncIOMotorClient(MONGODB_URI)
     brand_brains = mongo_client[MONGODB_DB]["brand_brains"]
+    # Sales Call Analyzer: one document per analysis. The raw provider response
+    # goes in its own collection with a TTL and is off unless
+    # SCA_STORE_RAW_TRANSCRIPT is set - see sales_call_analyzer/store.py.
+    sales_call_analyses = mongo_client[MONGODB_DB]["sales_call_analyses"]
+    sales_call_transcripts_raw = mongo_client[MONGODB_DB]["sales_call_transcripts_raw"]
 else:
     mongo_client = None
     brand_brains = None
+    sales_call_analyses = None
+    sales_call_transcripts_raw = None
 
 
 def _require_mongo():
@@ -80,6 +89,19 @@ def _require_mongo():
             status_code=503,
             detail="Brand Brain storage is not configured. Set MONGODB_URI in the environment.",
         )
+
+
+# ---------------------------------------------------------------------------
+# Logging. The rest of this file predates it and still uses print(); new code
+# uses the logger. Level is env-driven so a server can be turned up without a
+# code change. NEVER log an API key, a signed URL, transcript text or customer
+# contact details - ids, counts and timings only.
+# ---------------------------------------------------------------------------
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logger = logging.getLogger("scaleserum")
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +128,68 @@ async def require_api_key(provided: Optional[str] = Security(api_key_header)):
         )
 
 
-app = FastAPI(title="Brand Brain Persona Rewriter", version="1.0.0")
+# ---------------------------------------------------------------------------
+# Sales Call Analyzer (transcription + diarization + framework evaluation).
+#
+# Imported defensively, like purchase_probability_model: a problem in this
+# package must not stop onboarding and Script Lab from booting. If the import
+# fails the endpoints report `analyzer_unavailable` instead of 500ing.
+#
+# Deepgram is configured here but NOT required at boot. GEMINI_API_KEY raises at
+# import above because nothing works without it; Deepgram is one feature of
+# several, so an unset key degrades that feature and says so.
+# ---------------------------------------------------------------------------
+DEEPGRAM_API_KEY = os.environ.get("DEEPGRAM_API_KEY")
+DEEPGRAM_MODEL = os.environ.get("DEEPGRAM_MODEL", "nova-2")
+
+SALES_CALL_ANALYZER_AVAILABLE = True
+try:
+    import sales_call_analyzer as sca
+    from sales_call_analyzer import deepgram_client as _sca_deepgram
+    from sales_call_analyzer import framework as _sca_framework
+    from sales_call_analyzer import pipeline as _sca_pipeline
+    from sales_call_analyzer import scoring as _sca_scoring
+    from sales_call_analyzer import store as _sca_store
+    from sales_call_analyzer.models import AnalyzeAccepted, AnalyzeRequest
+
+    _sca_framework.load_framework()   # fail loudly here rather than per request
+    _sca_framework.load_signals()
+except Exception as _sca_import_error:  # pragma: no cover - import-time only
+    SALES_CALL_ANALYZER_AVAILABLE = False
+    _SCA_IMPORT_ERROR = repr(_sca_import_error)
+    print(f"WARNING: sales_call_analyzer unavailable - {_SCA_IMPORT_ERROR}")
+
+    # The routes below are defined unconditionally and annotate their body with
+    # AnalyzeRequest. Without a stand-in, the failed import would raise NameError
+    # at def time and take the WHOLE service down - onboarding and Script Lab
+    # included - which is the exact opposite of what this guard is for.
+    # With it, the endpoints still exist and return a clean 503.
+    class AnalyzeRequest(BaseModel):  # type: ignore[no-redef]
+        call_id: str = ""
+
+    class AnalyzeAccepted(BaseModel):  # type: ignore[no-redef]
+        analysis_id: str = ""
+        call_id: str = ""
+        status: str = "unavailable"
+
+sales_call_store = None
+if SALES_CALL_ANALYZER_AVAILABLE and sales_call_analyses is not None:
+    sales_call_store = _sca_store.AnalysisStore(
+        sales_call_analyses, raw_collection=sales_call_transcripts_raw)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Startup: make sure the analysis indexes exist. Shutdown: close the shared
+    Deepgram HTTP client. Both are no-ops when the feature is not configured."""
+    if sales_call_store is not None:
+        await sales_call_store.ensure_indexes()
+    yield
+    if SALES_CALL_ANALYZER_AVAILABLE:
+        await _sca_deepgram.aclose()
+
+
+app = FastAPI(title="Brand Brain Persona Rewriter", version="1.0.0", lifespan=lifespan)
 
 # Which frontend origins may call this API. Defaults to the local dev origins;
 # override in production by setting ALLOWED_ORIGINS in .env to a comma-separated
@@ -324,7 +407,20 @@ def build_context_block(ctx: BrandContext) -> str:
 # ---------------------------------------------------------------------------
 @app.get("/health")
 async def health():
-    return {"ok": True, "model": GEMINI_MODEL}
+    """Liveness plus which optional subsystems are configured.
+
+    Booleans and names only - never a key. The deploy health check reads `ok`
+    and is unaffected by the extra fields.
+    """
+    return {
+        "ok": True,
+        "model": GEMINI_MODEL,
+        "sales_call_analyzer": {
+            "available": SALES_CALL_ANALYZER_AVAILABLE,
+            "transcription": "configured" if DEEPGRAM_API_KEY else "not_configured",
+            "storage": "configured" if sales_call_store is not None else "not_configured",
+        },
+    }
 
 
 @app.post("/api/brand-brain/rewrite-persona", response_model=RewriteResponse,
@@ -1056,6 +1152,252 @@ async def purchase_probability(
         block["brand_brain_store"] = (
             "configured" if brand_brains is not None else "not_configured")
     return result
+
+
+# ---------------------------------------------------------------------------
+# Sales Call Analyzer
+#
+# Transcribes and diarizes a recorded sales call (Deepgram), evaluates it against
+# the six-stage sales framework (Gemini), verifies every claim against the
+# transcript, and scores it DETERMINISTICALLY in Python. The model never
+# produces a number - see sales_call_analyzer/scoring.py.
+#
+# ASYNCHRONOUS. Transcription plus analysis takes longer than a request should be
+# held open, so POST returns an analysis_id immediately and the backend polls the
+# GET. Processing runs in a FastAPI BackgroundTask bounded by a concurrency gate,
+# because this is a single pm2 fork process shared with onboarding and Script Lab.
+#
+# Path style follows the rest of this file (/api/<feature>/...). Versioning is
+# carried in the payload - framework_version, prompt_version, transcript_version -
+# so the contract can evolve without a URL change. If a /v1 prefix is ever wanted
+# it should be applied to every endpoint in this service, not just this one.
+# ---------------------------------------------------------------------------
+SALES_CALL_POLL_SECONDS = int(os.environ.get("SCA_POLL_INTERVAL_SECONDS", 5))
+
+
+def _require_sales_call_analyzer():
+    if not SALES_CALL_ANALYZER_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="The Sales Call Analyzer is not available on this server.")
+    if sales_call_store is None:
+        raise HTTPException(
+            status_code=503,
+            detail=("Sales call analysis storage is not configured. "
+                    "Set MONGODB_URI in the environment."))
+
+
+async def _sca_resolve_brand_ref(lead_id: str) -> dict:
+    """Which brand (and Brand Brain) a lead belongs to.
+
+    Reuses the purchase-probability lookup rather than adding a second query. It
+    is synchronous psycopg, so it goes to the threadpool like every other
+    database call in this file.
+    """
+    if not PURCHASE_PROBABILITY_AVAILABLE or not lead_id:
+        return {}
+    return await run_in_threadpool(_pp_brand_ref, lead_id)
+
+
+def _sales_call_deps():
+    """Everything the pipeline needs from this process. The analyzer package owns
+    no clients or connections of its own."""
+    return _sca_pipeline.PipelineDeps(
+        store=sales_call_store,
+        llm_client=client,
+        llm_model=GEMINI_MODEL,
+        transcribe=_sca_deepgram.transcribe,
+        load_brand_brain=_load_brand_brain,          # the existing helper, reused
+        resolve_brand_ref=_sca_resolve_brand_ref,
+        transcription_model=DEEPGRAM_MODEL,
+    )
+
+
+async def _sales_call_job(analysis_id, body, created_at):
+    """Background job body. Every expected failure is already persisted with a
+    reason by the pipeline; this only guards the truly unexpected, because a task
+    that dies silently would leave the row in an active status forever."""
+    try:
+        await _sca_pipeline.run_analysis(analysis_id, body, _sales_call_deps(),
+                                         created_at=created_at)
+    except Exception:  # noqa: BLE001
+        logger.exception("sales call job crashed [analysis_id=%s]", analysis_id)
+        try:
+            await sales_call_store.fail(
+                analysis_id, reason=sca.ANALYSIS_PROVIDER_ERROR,
+                message="The analysis did not complete.")
+        except Exception:  # noqa: BLE001
+            logger.exception("could not record failure [analysis_id=%s]", analysis_id)
+
+
+def _poll_url(analysis_id: str) -> str:
+    return f"/api/sales-calls/analysis/{analysis_id}"
+
+
+@app.post("/api/sales-calls/analyze", dependencies=[Depends(require_api_key)])
+async def analyze_sales_call(body: AnalyzeRequest, background: BackgroundTasks):
+    """Submit a call for analysis. Returns immediately with an analysis_id.
+
+    This is NOT the report - poll GET /api/sales-calls/analysis/{analysis_id}.
+
+    Idempotent: an identical submission returns the existing analysis and costs
+    nothing. Send options.force_reanalysis=true to override.
+    """
+    _require_sales_call_analyzer()
+
+    cfg = _sca_framework.load_framework()
+    fingerprint = _sca_store.compute_fingerprint(
+        body,
+        framework_version=cfg["framework_version"],
+        prompt_version=_sca_pipeline.analyzer_mod.PROMPT_VERSION,
+        llm_model=GEMINI_MODEL,
+        transcription_model=DEEPGRAM_MODEL,
+    )
+
+    # Already analysed, or already running? Hand back what exists.
+    existing = await sales_call_store.find_by_fingerprint(fingerprint)
+    if _sca_store.reusable(existing, force=body.options.force_reanalysis):
+        return AnalyzeAccepted(
+            analysis_id=existing["_id"], call_id=existing["call_id"],
+            status=existing["status"], created_at=existing.get("created_at"),
+            idempotent_hit=True, poll_url=_poll_url(existing["_id"]),
+            suggested_poll_interval_seconds=SALES_CALL_POLL_SECONDS)
+
+    analysis_id = _sca_store.new_analysis_id()
+    versions = {"framework_version": cfg["framework_version"],
+                "signals_version": _sca_framework.load_signals()["signals_version"],
+                "prompt_version": _sca_pipeline.analyzer_mod.PROMPT_VERSION,
+                "llm_model": GEMINI_MODEL,
+                "transcription_model": DEEPGRAM_MODEL}
+    doc = await sales_call_store.create(analysis_id=analysis_id, request=body,
+                                        fingerprint=fingerprint, versions=versions)
+
+    # Nothing to analyse. Recorded as a failed analysis rather than a 4xx, so the
+    # backend gets an auditable row and the same reason vocabulary as every other
+    # failure - consistent with the always-200 contract used across this API.
+    if not (_sca_pipeline.transcript_mod.has_audio(body.audio)
+            or _sca_pipeline.transcript_mod.has_text(body.transcript)):
+        await sales_call_store.fail(
+            analysis_id, reason=sca.NO_AUDIO_OR_TRANSCRIPT,
+            message=sca.REASON_TEXT[sca.NO_AUDIO_OR_TRANSCRIPT])
+        return AnalyzeAccepted(
+            analysis_id=analysis_id, call_id=body.call_id, status=sca.STATUS_FAILED,
+            created_at=doc["created_at"], poll_url=_poll_url(analysis_id),
+            availability=_sca_pipeline.unavailable(sca.NO_AUDIO_OR_TRANSCRIPT),
+            reason=sca.NO_AUDIO_OR_TRANSCRIPT,
+            message=sca.REASON_TEXT[sca.NO_AUDIO_OR_TRANSCRIPT])
+
+    background.add_task(_sales_call_job, analysis_id, body, doc["created_at"])
+    logger.info("sales call analysis queued [analysis_id=%s call_id=%s lead_id=%s]",
+                analysis_id, body.call_id, body.lead_id)
+
+    return AnalyzeAccepted(
+        analysis_id=analysis_id, call_id=body.call_id, status=sca.STATUS_QUEUED,
+        created_at=doc["created_at"], poll_url=_poll_url(analysis_id),
+        suggested_poll_interval_seconds=SALES_CALL_POLL_SECONDS)
+
+
+async def _sales_call_payload(doc: dict) -> dict:
+    """Turn a stored job document into the polling response.
+
+    A job whose heartbeat has stopped is reaped here: a pm2 restart mid-flight
+    (that is, every deploy) would otherwise leave a row reporting "analyzing"
+    forever. It becomes a stated failure the caller can retry.
+    """
+    if _sca_store.is_stale(doc):
+        await sales_call_store.mark_interrupted(doc["_id"])
+        doc = await sales_call_store.get(doc["_id"]) or doc
+
+    status = doc.get("status")
+    if status in sca.TERMINAL_STATUSES and doc.get("report"):
+        report = dict(doc["report"])
+        report["status"] = status
+        return report
+
+    return {
+        "analysis_id": doc["_id"],
+        "call_id": doc.get("call_id"),
+        "lead_id": doc.get("lead_id"),
+        "status": status,
+        "availability": {
+            "available": status != sca.STATUS_FAILED,
+            "reason": doc.get("reason"),
+            "message": doc.get("message"),
+        },
+        "scores": None,
+        "created_at": doc.get("created_at"),
+        "updated_at": doc.get("updated_at"),
+        "attempts": doc.get("attempts", 0),
+        "poll_url": _poll_url(doc["_id"]),
+        "suggested_poll_interval_seconds": SALES_CALL_POLL_SECONDS,
+        "fallback": status == sca.STATUS_FAILED,
+    }
+
+
+@app.get("/api/sales-calls/analysis/{analysis_id}",
+         dependencies=[Depends(require_api_key)])
+async def get_sales_call_analysis(analysis_id: str):
+    """Poll for status, then read the finished report.
+
+    While processing: a small envelope with `status` and `scores: null`.
+    When complete: the full report. On failure: the same shape with
+    `availability.available=false`, a stable `reason`, and `scores: null` - a
+    failed analysis never invents a scorecard.
+    """
+    _require_sales_call_analyzer()
+    doc = await sales_call_store.get(analysis_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="analysis_id not found")
+    return await _sales_call_payload(doc)
+
+
+@app.get("/api/sales-calls/analysis/by-call/{call_id}",
+         dependencies=[Depends(require_api_key)])
+async def get_latest_sales_call_analysis(call_id: str):
+    """The most recent analysis for a call - for a backend that kept the call_id
+    but not the analysis_id."""
+    _require_sales_call_analyzer()
+    doc = await sales_call_store.latest_for_call(call_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="no analysis exists for that call_id")
+    return await _sales_call_payload(doc)
+
+
+@app.post("/api/sales-calls/analysis/{analysis_id}/rescore",
+          dependencies=[Depends(require_api_key)])
+async def rescore_sales_call_analysis(analysis_id: str):
+    """Recompute the scores from the stored ratings under the current framework.
+
+    No Deepgram call, no Gemini call, no cost. This is the payoff for storing
+    per-criterion ratings rather than only numbers: when management sets real
+    weights or a real rating scale, historical calls can be brought onto the new
+    configuration without re-analysing them.
+    """
+    _require_sales_call_analyzer()
+    doc = await sales_call_store.get(analysis_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="analysis_id not found")
+
+    analysis = doc.get("analysis")
+    if doc.get("status") != sca.STATUS_COMPLETED or not analysis:
+        raise HTTPException(status_code=409,
+                            detail="Only a completed analysis can be rescored.")
+
+    cfg = _sca_framework.load_framework()
+    result = _sca_scoring.rescore(analysis, cfg, doc.get("blocked_criteria") or {})
+
+    report = dict(doc.get("report") or {})
+    report["scores"] = result["scores"].model_dump(mode="json")
+    report["stage_evaluations"] = [s.model_dump(mode="json")
+                                   for s in result["stage_evaluations"]]
+    report["status"] = sca.STATUS_COMPLETED
+    await sales_call_store.complete(
+        analysis_id, report=report, analysis=analysis,
+        blocked=doc.get("blocked_criteria") or {},
+        processing=doc.get("processing") or {})
+    logger.info("analysis rescored [analysis_id=%s framework_version=%s]",
+                analysis_id, cfg["framework_version"])
+    return report
 
 
 if __name__ == "__main__":

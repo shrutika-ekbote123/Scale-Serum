@@ -1,0 +1,90 @@
+{
+  "signals_version": "signals_v1",
+  "basis": "Closed vocabularies for the qualitative layer. Their only job is to stop the model inventing a new label for every call, so two calls can be compared and the UI can filter. Nothing here is scored - see sales_framework.json for anything that produces a number.",
+
+  "evidence_rule": "A signal, technique, objection, need or buying signal is only reported when it is supported by transcript evidence that resolves to a real segment. evidence.py drops anything that does not, so an unsupported label cannot reach the report. Do not relax this in the prompt.",
+
+  "customer_signals": {
+    "note": "Signals expressed by the customer or another non-representative participant.",
+    "types": [
+      {"id": "buying_intent", "label": "Buying intent", "definition": "The customer indicates they want to move forward - asking about price, start dates, enrolment or next steps in a possessive way."},
+      {"id": "hesitation", "label": "Hesitation", "definition": "The customer stalls, defers, or asks for time without committing."},
+      {"id": "price_sensitivity", "label": "Price sensitivity", "definition": "The customer reacts to cost, asks for discounts, instalments, or compares on price."},
+      {"id": "trust", "label": "Trust or scepticism", "definition": "The customer expresses confidence in, or doubt about, the brand, the representative or the claims made."},
+      {"id": "authority", "label": "Decision authority", "definition": "The customer reveals who decides - themselves alone, a partner, family, a manager or a committee."},
+      {"id": "objection_signal", "label": "Objection", "definition": "The customer raises a concern that stands between them and a purchase."},
+      {"id": "engagement", "label": "Engagement", "definition": "The customer participates actively - asking questions, elaborating, building on what was said."},
+      {"id": "interest", "label": "Interest", "definition": "The customer expresses positive attention to a specific benefit, feature or outcome."},
+      {"id": "confusion", "label": "Confusion", "definition": "The customer misunderstands something or asks for the same point to be repeated or clarified."},
+      {"id": "risk_concern", "label": "Risk concern", "definition": "The customer worries about what happens if it does not work - refunds, guarantees, time wasted, reputation."},
+      {"id": "urgency", "label": "Urgency", "definition": "The customer expresses their own time pressure or a deadline of their own."},
+      {"id": "commitment", "label": "Commitment", "definition": "The customer agrees to do something specific - pay, attend, send documents, join a session."},
+      {"id": "next_step_readiness", "label": "Next-step readiness", "definition": "The customer accepts or proposes a concrete next action."},
+      {"id": "emotional_motivation", "label": "Emotional motivation", "definition": "The customer reveals the personal driver behind the purchase - status, security, family, frustration, ambition."},
+      {"id": "disengagement", "label": "Disengagement", "definition": "The customer withdraws - short answers, wanting to end the call, no reciprocal questions."}
+    ]
+  },
+
+  "rep_techniques": {
+    "note": "Persuasion techniques used by the sales representative. Reported with an effectiveness read, never scored on their own.",
+    "types": [
+      {"id": "social_proof", "label": "Social proof", "definition": "Cites other customers, cohort sizes, testimonials or peer behaviour."},
+      {"id": "authority_positioning", "label": "Authority", "definition": "Cites credentials, faculty, accreditation, rankings or institutional standing."},
+      {"id": "scarcity_urgency", "label": "Scarcity or urgency", "definition": "Cites limited seats, closing dates, expiring pricing or a cohort start."},
+      {"id": "loss_aversion", "label": "Loss aversion", "definition": "Frames the cost of not acting - opportunities missed, stagnation, competitors moving ahead."},
+      {"id": "value_framing", "label": "Value framing", "definition": "Reframes price against outcome, ROI, instalments or a per-unit comparison."},
+      {"id": "reciprocity", "label": "Reciprocity", "definition": "Offers something first - a resource, a review, a free session, extra access."},
+      {"id": "commitment_consistency", "label": "Commitment and consistency", "definition": "Secures a small agreement and builds on it toward a larger one."},
+      {"id": "risk_reversal", "label": "Risk reversal", "definition": "Removes perceived risk - guarantees, refunds, trial periods, staged payments."},
+      {"id": "personalisation", "label": "Personalisation", "definition": "Ties the offer to this customer's stated situation, goal or constraint."},
+      {"id": "storytelling", "label": "Storytelling", "definition": "Uses a narrative about a comparable customer to carry the point."}
+    ]
+  },
+
+  "effectiveness": {
+    "values": ["landed", "neutral", "backfired", "insufficient_evidence"],
+    "note": "How the customer actually responded to a technique, read from what they said next - not from whether the technique is generally considered good practice."
+  },
+
+  "pitch_structures": {
+    "note": "There is no single correct pitch structure. The structure is identified, then assessed for fit with THIS customer, product, price band and awareness level.",
+    "types": [
+      {"id": "consultative_discovery_first", "label": "Consultative (discovery first)", "definition": "Extensive questioning before any solution is presented."},
+      {"id": "problem_solution", "label": "Problem-solution", "definition": "Names the problem, agitates it, then presents the product as the resolution."},
+      {"id": "story_led", "label": "Story-led", "definition": "Leads with a narrative of a comparable customer's journey."},
+      {"id": "roi_led", "label": "ROI-led", "definition": "Leads with outcomes, returns and payback."},
+      {"id": "feature_led", "label": "Feature-led", "definition": "Walks through the product's components and specifications."},
+      {"id": "social_proof_led", "label": "Social-proof-led", "definition": "Leads with who else has bought and what happened to them."},
+      {"id": "comparison_led", "label": "Comparison-led", "definition": "Positions primarily against alternatives or competitors."},
+      {"id": "direct_offer", "label": "Direct offer", "definition": "Moves quickly to the offer and the close with minimal build-up."},
+      {"id": "mixed", "label": "Mixed", "definition": "Combines several structures without one dominating."},
+      {"id": "none_discernible", "label": "No discernible structure", "definition": "No recognisable structure was followed."}
+    ],
+    "fit_values": ["well_matched", "partially_matched", "mismatched", "insufficient_evidence"]
+  },
+
+  "context_factors": {
+    "note": "Factors the analysis may take into account when judging whether the representative adapted to THIS customer. They are contextual signals, never deterministic rules: nothing here licenses a claim about how people from a region or profile behave. A factor is only used when the call context actually supplies it.",
+    "factors": [
+      "region", "language and code-switching", "product and price band", "product complexity",
+      "customer profile and seniority", "customer's level of awareness", "industry and background",
+      "stated goals", "decision-making structure", "formality of the exchange",
+      "brand positioning and approved messaging", "brand's typical sales cycle", "call direction and stage of the journey"
+    ],
+    "assessment_values": ["well_adapted", "partially_adapted", "poorly_adapted", "insufficient_evidence"]
+  },
+
+  "limits": {
+    "max_customer_signals": 20,
+    "max_rep_techniques": 15,
+    "max_objections": 12,
+    "max_buying_signals": 12,
+    "max_customer_needs": 12,
+    "max_pain_points": 12,
+    "max_highlights": 8,
+    "max_strengths": 8,
+    "max_weaknesses": 8,
+    "max_recommendations": 8,
+    "note": "Caps exist to bound prompt output size and to discourage padding. They are ceilings, not targets - the report shows however many are genuinely supported, and report.py never pads to reach a number."
+  }
+}

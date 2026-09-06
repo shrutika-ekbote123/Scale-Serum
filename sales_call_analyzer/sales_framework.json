@@ -1,0 +1,151 @@
+{
+  "framework_version": "sales_v1",
+  "basis": "Six-stage call audit framework supplied by ScaleSerum management (the 'Call Analysis parameter' sheet). Stage objectives, evaluation points and KPIs are transcribed from that sheet. Nothing here is invented.",
+
+  "unconfirmed_business_values": [
+    "stage weights", "criterion weights", "rating_scale", "bands / thresholds",
+    "not_applicable_policy", "disposition_policy", "minimum call length"
+  ],
+  "how_to_configure": "Every business value below is null on purpose. null means 'management has not decided'. Fill a value in, bump framework_version, redeploy - no Python changes are needed. scoring.py reports which of these were still null for every analysis it produces, so a placeholder can never be mistaken for a decision.",
+
+  "score_max": 10,
+
+  "rating_levels": ["absent", "weak", "adequate", "strong"],
+  "rating_scale": null,
+  "rating_scale_note": "Maps each rating level to a fraction of score_max. null means no business mapping exists, so scoring.py derives one by spacing rating_levels uniformly over [0,1] and reports rating_scale_mode='uniform_placeholder'. Uniform spacing is a mechanical default, not a judgement about what 'adequate' is worth. To set a real one, supply an object keyed by rating level with fractions from 0.0 to 1.0.",
+
+  "weights": {
+    "stage_weights_confirmed": false,
+    "criterion_weights_confirmed": false,
+    "note": "A null weight means equal weighting at that level. Set a positive number per stage/criterion to override, and flip the matching *_confirmed flag so the API stops reporting the weighting as a placeholder."
+  },
+
+  "not_applicable_policy": {
+    "mode": "exclude",
+    "confirmed": false,
+    "options": ["exclude", "zero"],
+    "note": "What to do with a criterion or stage the call gave no opportunity for (e.g. Objection Handling when the customer raised no objection). 'exclude' drops it from the denominator; 'zero' scores it 0. 'exclude' is the neutral default because marking a rep down for something the customer never did is an artefact, not a finding. This is a business decision - confirmed:false until management rules."
+  },
+
+  "bands": null,
+  "bands_note": "Score bands / pass-fail thresholds. null means none are configured, and the API returns band=null with band_reason='thresholds_not_configured'. Do NOT copy Script Lab's 90/70/50 ad-script bands here - they carry no authority for sales calls.",
+
+  "disposition_policy": {
+    "confirmed": false,
+    "skip_full_evaluation": [],
+    "minimum_duration_seconds": null,
+    "minimum_segments": null,
+    "note": "Dispositions for which the six-stage evaluation should be skipped (a transcript is still produced). Empty on purpose: 'No Answer' and 'Invalid number' are the obvious candidates, but that is management's call. Values are matched case-insensitively against call_metadata.disposition."
+  },
+
+  "requirements": {
+    "vocal_tone": "Needs an audio-derived transcript. A pasted text transcript carries no tone, energy or interruption information, so criteria tagged with this become not-applicable rather than being guessed at.",
+    "prior_interaction": "Needs a recorded previous interaction, campaign or enquiry in the call context.",
+    "structured_programme": "Only meaningful for products sold as a structured programme or certification.",
+    "payment_process": "Only meaningful where enrolment or payment is completed by the representative on the call."
+  },
+
+  "stages": [
+    {
+      "id": "call_opening",
+      "order": 1,
+      "name": "Call Opening",
+      "objective": "Create a professional first impression and establish credibility.",
+      "weight": null,
+      "may_be_not_applicable": false,
+      "kpis": ["Professional introduction", "Positive energy", "Rapport building", "Permission-based opening"],
+      "criteria": [
+        {"id": "opening_greeting", "name": "Professional greeting delivered with confidence", "weight": null, "may_be_not_applicable": false, "requires": []},
+        {"id": "opening_self_intro", "name": "Introduces self, organisation and designation", "weight": null, "may_be_not_applicable": false, "requires": []},
+        {"id": "opening_permission", "name": "Confirms whether it is a convenient time to speak", "weight": null, "may_be_not_applicable": true, "requires": []},
+        {"id": "opening_tone", "name": "Warm, energetic and engaging tone", "weight": null, "may_be_not_applicable": true, "requires": ["vocal_tone"]},
+        {"id": "opening_personalisation", "name": "Personalises using the customer's name or a previous interaction", "weight": null, "may_be_not_applicable": true, "requires": []}
+      ]
+    },
+    {
+      "id": "purpose_of_call",
+      "order": 2,
+      "name": "Purpose of the Call",
+      "objective": "Clearly communicate why the call has been made and set expectations.",
+      "weight": null,
+      "may_be_not_applicable": false,
+      "kpis": ["Clear objective", "Customer understands the agenda", "Smooth transition into discussion"],
+      "criteria": [
+        {"id": "purpose_stated_early", "name": "States the reason for calling within the first minute", "weight": null, "may_be_not_applicable": false, "requires": []},
+        {"id": "purpose_reference", "name": "References the webinar, enquiry, profile review or previous interaction", "weight": null, "may_be_not_applicable": true, "requires": ["prior_interaction"]},
+        {"id": "purpose_curiosity", "name": "Creates curiosity without overwhelming the customer", "weight": null, "may_be_not_applicable": false, "requires": []},
+        {"id": "purpose_transition", "name": "Transitions smoothly into the discussion", "weight": null, "may_be_not_applicable": false, "requires": []}
+      ]
+    },
+    {
+      "id": "probing",
+      "order": 3,
+      "name": "Probing",
+      "objective": "Understand the customer's background, aspirations, challenges and decision-making criteria.",
+      "weight": null,
+      "may_be_not_applicable": false,
+      "kpis": ["Effective questioning", "Active listening", "Identifies pain points", "Captures customer needs"],
+      "criteria": [
+        {"id": "probing_background", "name": "Understands current designation, industry and experience", "weight": null, "may_be_not_applicable": false, "requires": []},
+        {"id": "probing_aspirations", "name": "Explores aspirations and longer-term ambitions", "weight": null, "may_be_not_applicable": true, "requires": []},
+        {"id": "probing_challenges", "name": "Identifies challenges or gaps", "weight": null, "may_be_not_applicable": false, "requires": []},
+        {"id": "probing_active_listening", "name": "Practises active listening and asks relevant follow-up questions", "weight": null, "may_be_not_applicable": false, "requires": []},
+        {"id": "probing_needs_captured", "name": "Captures the customer's needs and decision criteria", "weight": null, "may_be_not_applicable": false, "requires": []}
+      ]
+    },
+    {
+      "id": "product_pitching",
+      "order": 4,
+      "name": "Product Pitching",
+      "objective": "Position the product or programme as the ideal solution aligned with the customer's goals.",
+      "weight": null,
+      "may_be_not_applicable": true,
+      "not_applicable_when": "The call ended before any product or programme was presented.",
+      "kpis": ["Need-based presentation", "Confidence", "Benefit-oriented communication"],
+      "criteria": [
+        {"id": "pitch_needs_link", "name": "Connects product benefits to the needs identified", "weight": null, "may_be_not_applicable": false, "requires": []},
+        {"id": "pitch_structure_explained", "name": "Explains the programme structure and certifications", "weight": null, "may_be_not_applicable": true, "requires": ["structured_programme"]},
+        {"id": "pitch_value_props", "name": "Highlights the unique value propositions", "weight": null, "may_be_not_applicable": false, "requires": []},
+        {"id": "pitch_roi", "name": "Explains ROI and value rather than only features", "weight": null, "may_be_not_applicable": false, "requires": []},
+        {"id": "pitch_proof", "name": "Uses success stories or practical examples", "weight": null, "may_be_not_applicable": true, "requires": []},
+        {"id": "pitch_no_overload", "name": "Avoids information overload", "weight": null, "may_be_not_applicable": false, "requires": []}
+      ]
+    },
+    {
+      "id": "objection_handling",
+      "order": 5,
+      "name": "Objection Handling",
+      "objective": "Address concerns confidently while maintaining the customer's trust.",
+      "weight": null,
+      "may_be_not_applicable": true,
+      "not_applicable_when": "The customer raised no objection or concern during the call.",
+      "kpis": ["Empathy", "Logical responses", "Confidence", "Converts objections into opportunities"],
+      "criteria": [
+        {"id": "objection_listens", "name": "Listens without interrupting", "weight": null, "may_be_not_applicable": true, "requires": ["vocal_tone"]},
+        {"id": "objection_acknowledges", "name": "Acknowledges the customer's concern", "weight": null, "may_be_not_applicable": true, "requires": []},
+        {"id": "objection_clarifies", "name": "Clarifies the actual objection", "weight": null, "may_be_not_applicable": true, "requires": []},
+        {"id": "objection_resolves", "name": "Responds with logical and relevant solutions", "weight": null, "may_be_not_applicable": true, "requires": []},
+        {"id": "objection_tone", "name": "Maintains a positive and calm tone", "weight": null, "may_be_not_applicable": true, "requires": ["vocal_tone"]}
+      ]
+    },
+    {
+      "id": "closing",
+      "order": 6,
+      "name": "Closing the Deal",
+      "objective": "Secure the customer's commitment and define the next step.",
+      "weight": null,
+      "may_be_not_applicable": true,
+      "not_applicable_when": "The call ended before any close or next step could be attempted.",
+      "kpis": ["Confident closing", "Professional sign-off"],
+      "criteria": [
+        {"id": "closing_buying_signals", "name": "Identifies and acts on buying signals", "weight": null, "may_be_not_applicable": true, "requires": []},
+        {"id": "closing_summarises", "name": "Summarises the benefits discussed", "weight": null, "may_be_not_applicable": false, "requires": []},
+        {"id": "closing_urgency", "name": "Creates urgency where appropriate", "weight": null, "may_be_not_applicable": true, "requires": []},
+        {"id": "closing_process", "name": "Explains the payment or enrolment steps", "weight": null, "may_be_not_applicable": true, "requires": ["payment_process"]},
+        {"id": "closing_next_action", "name": "Confirms the next action", "weight": null, "may_be_not_applicable": false, "requires": []},
+        {"id": "closing_timelines", "name": "Confirms timelines", "weight": null, "may_be_not_applicable": true, "requires": []},
+        {"id": "closing_signoff", "name": "Ends the call professionally with appreciation", "weight": null, "may_be_not_applicable": false, "requires": []}
+      ]
+    }
+  ]
+}

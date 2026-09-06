@@ -223,3 +223,18 @@ exact same script, and you see the error immediately without the SSH layer.
   `pm2 startup` once at setup or pm2 will not come back after a reboot.
 - `deploy.sh` is piped in from the checkout, so the server always runs the deploy
   script from the commit being deployed. Changes to it take effect immediately.
+
+## Sales Call Analyzer
+
+The analyzer needs `DEEPGRAM_API_KEY` in `$APP_DIR/.env` on the server.
+`ecosystem.config.js` only forwards `GEMINI_API_KEY` through pm2 - everything
+else is read from `.env` by `load_dotenv()`, so add it there.
+
+It is optional: with no key the app boots normally, supplied transcripts still
+analyse, and audio requests report `transcription_not_configured`. Check it with
+`curl -s localhost:3001/health | jq .sales_call_analyzer` - the response says
+`configured` or `not_configured` and never contains the key itself.
+
+The analyzer also needs `MONGODB_URI` (it stores analyses in
+`sales_call_analyses`); without it the endpoints return 503 like the Brand Brain
+store. See `SALES_CALL_ANALYZER.md` for the API contract.
