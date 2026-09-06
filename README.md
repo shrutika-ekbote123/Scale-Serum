@@ -227,6 +227,40 @@ blanks, so a partially-filled questionnaire still produces useful output.
 
 ---
 
+### 5. Sales Call Analyzer
+
+Analyses a recorded sales call against a six-stage sales framework.
+
+```
+POST /api/sales-calls/analyze                      -> { analysis_id, status }
+GET  /api/sales-calls/analysis/{analysis_id}       -> status, then the report
+GET  /api/sales-calls/analysis/by-call/{call_id}   -> latest analysis for a call
+POST /api/sales-calls/analysis/{id}/rescore        -> recompute scores, no cost
+```
+
+**Asynchronous**: the POST returns an id immediately; poll the GET (~5s).
+Transcription plus analysis takes 1-3 minutes for a typical call.
+
+Deepgram provides transcription and speaker diarization; Gemini interprets the
+conversation and rates each framework criterion; **Python computes every score**.
+The model is given no way to return a number, so a score is reproducible, can be
+recomputed under new weights without re-analysing, and cannot be moved by
+anything said on the call.
+
+Weights, the rating scale and score bands are **not set** — management has not
+decided them. The service ships neutral placeholders and says so in every
+response (`weighting: "equal_unweighted_placeholder"`, `band: null`). Setting
+real values is a JSON edit in `sales_call_analyzer/sales_framework.json`.
+
+Needs `DEEPGRAM_API_KEY` (server-side only, never in frontend code) and
+`MONGODB_URI`. Without the Deepgram key the app still boots: supplied transcripts
+are analysed and audio requests report `transcription_not_configured`.
+
+Full contract: **`SALES_CALL_ANALYZER.md`**. Module notes:
+`sales_call_analyzer/README.md`.
+
+---
+
 ## Frontend integration
 
 | File | Purpose |
@@ -271,8 +305,12 @@ Internet → Nginx/Caddy (TLS) → Gunicorn + Uvicorn workers → Gemini API
 ## Project structure
 
 ```
-├── app.py                            # the whole service — all 3 endpoints
+├── app.py                            # the whole service — all endpoints
 ├── requirements.txt
+├── sales_call_analyzer/              # Sales Call Analyzer (see its README)
+│   ├── sales_framework.json          # the 6 stages; every business value is null
+│   └── ...                           # transcription, evidence, scoring, pipeline
+├── SALES_CALL_ANALYZER.md            # API contract for the backend team
 ├── .env.example                      # copy to .env and add your key
 ├── HANDOFF.md                        # server/backend setup guide
 ├── FRONTEND_HANDOFF.md               # frontend wiring guide

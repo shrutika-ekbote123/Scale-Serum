@@ -42,3 +42,6 @@ cloudflared.exe
 *.swp
 .DS_Store
 Thumbs.db
+
+# Test recordings — real customer audio, never commit
+testaudio/

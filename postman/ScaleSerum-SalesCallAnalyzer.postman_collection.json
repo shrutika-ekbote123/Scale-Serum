@@ -1,0 +1,464 @@
+{
+  "info": {
+    "name": "ScaleSerum — Sales Call Analyzer",
+    "description": "Manual test pack for the Sales Call Analyzer.\n\nSETUP\n1. Start the service:  python app.py   (defaults to port 3001)\n2. Set the `apiKey` collection variable to the value of API_KEY in .env.\n3. Run the requests IN ORDER — several depend on ids saved by earlier ones.\n\nASYNCHRONOUS: every POST /analyze returns an analysis_id immediately. Run the\nmatching 'poll' request until status is completed / failed / skipped.\nTranscript-only takes ~20-40s; audio adds transcription time.\n\nEach request has assertions in its Tests tab, so the Postman Runner gives a\npass/fail summary.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      { "key": "key", "value": "X-API-Key", "type": "string" },
+      { "key": "value", "value": "{{apiKey}}", "type": "string" },
+      { "key": "in", "value": "header", "type": "string" }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:3001",
+      "type": "string",
+      "description": "Where app.py is listening. Change if PORT in .env differs."
+    },
+    {
+      "key": "apiKey",
+      "value": "",
+      "type": "string",
+      "description": "PASTE YOUR KEY HERE. The value of API_KEY in .env. Left blank on purpose so a real key is never committed."
+    },
+    {
+      "key": "audioUrl",
+      "value": "https://dpgr.am/spacewalk.wav",
+      "type": "string",
+      "description": "Any PUBLICLY REACHABLE audio URL — Deepgram fetches it directly, so localhost or a private bucket will not work. The default is a short public sample (one speaker, not a sales call) that proves the transcription path works. Replace it with a real call recording URL for a meaningful score."
+    },
+    { "key": "analysisId", "value": "", "type": "string", "description": "Saved automatically by the POST requests." },
+    { "key": "audioAnalysisId", "value": "", "type": "string", "description": "Saved automatically." },
+    { "key": "callId", "value": "", "type": "string", "description": "Saved automatically." }
+  ],
+  "item": [
+    {
+      "name": "0. Health (no auth required)",
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] },
+        "description": "Confirms the service is up and which subsystems are configured.\n\nEXPECT: sales_call_analyzer.available = true, transcription = \"configured\",\nstorage = \"configured\".\n\nIf transcription says not_configured, DEEPGRAM_API_KEY is missing from .env.\nIf storage says not_configured, MONGODB_URI is missing — every /api/sales-calls\nrequest will return 503.\n\nThe key itself is never in this response."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('service is up', () => pm.expect(b.ok).to.be.true);",
+              "pm.test('analyzer loaded', () => pm.expect(b.sales_call_analyzer.available).to.be.true);",
+              "pm.test('storage configured', () => pm.expect(b.sales_call_analyzer.storage).to.eql('configured'));",
+              "pm.test('no secret leaked', () => pm.expect(pm.response.text()).to.not.include('sk-'));",
+              "if (b.sales_call_analyzer.transcription !== 'configured') {",
+              "  console.warn('DEEPGRAM_API_KEY not set — audio requests will report transcription_not_configured');",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Auth — wrong key returns 401",
+      "request": {
+        "auth": {
+          "type": "apikey",
+          "apikey": [
+            { "key": "key", "value": "X-API-Key", "type": "string" },
+            { "key": "value", "value": "definitely-not-the-key", "type": "string" },
+            { "key": "in", "value": "header", "type": "string" }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/sales-calls/analysis/anything",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "sales-calls", "analysis", "anything"]
+        },
+        "description": "Every /api/* endpoint is gated by the X-API-Key header."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('401 Unauthorized', () => pm.response.to.have.status(401));"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Submit — transcript only (no Deepgram cost)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"call_id\": \"postman_transcript_{{$timestamp}}\",\n  \"lead_id\": null,\n  \"transcript\": {\n    \"format\": \"text\",\n    \"text\": \"Rajan: Hi Meera, this is Rajan Kumar from EdTech Pro. Is now a good time to talk?\\nMeera: Yes that works. I registered for the masterclass last month.\\nRajan: Wonderful. What is driving your interest in the programme right now?\\nMeera: My main problem is I do not have a recognised certification for senior roles.\\nRajan: Understood. The Career Accelerator ends with an accredited certificate from our university partner.\\nMeera: That sounds useful but the fee is higher than I expected.\\nRajan: I hear you. We offer a three part instalment plan, so it is spread over the programme. Shall I send the payment link today?\\nMeera: Yes please send it across and I will complete it this evening.\"\n  },\n  \"call_metadata\": {\n    \"direction\": \"outbound\",\n    \"disposition\": \"SQL\",\n    \"duration_seconds\": 420,\n    \"remarks\": \"Discussed EMI options\"\n  },\n  \"rep\": { \"name\": \"Rajan Kumar\", \"designation\": \"Senior Counsellor\" },\n  \"customer\": {\n    \"name\": \"Meera Patel\",\n    \"email\": \"meera@example.com\",\n    \"phone\": \"+919876543210\",\n    \"region\": \"Maharashtra\",\n    \"designation\": \"Operations Manager\",\n    \"awareness_level\": \"problem-aware\"\n  },\n  \"product\": {\n    \"name\": \"Career Accelerator\",\n    \"price\": 200000,\n    \"currency\": \"INR\",\n    \"complexity\": \"high\",\n    \"is_structured_programme\": true,\n    \"sold_on_call\": false\n  }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/sales-calls/analyze",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "sales-calls", "analyze"]
+        },
+        "description": "The fastest end-to-end check: no audio, so Deepgram is skipped entirely and only Gemini is called.\n\nEXPECT: 200 with status \"queued\" and an analysis_id. This is NOT the report —\nrun request 3 to poll for it.\n\nThe analysis_id and call_id are saved into collection variables automatically."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('returned an analysis_id', () => pm.expect(b.analysis_id).to.be.a('string').and.not.empty);",
+              "pm.test('queued, not finished', () => pm.expect(b.status).to.eql('queued'));",
+              "pm.test('not an idempotent hit', () => pm.expect(b.idempotent_hit).to.be.false);",
+              "pm.collectionVariables.set('analysisId', b.analysis_id);",
+              "pm.collectionVariables.set('callId', b.call_id);",
+              "console.log('Poll with request 3. analysis_id =', b.analysis_id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Poll — transcript-only analysis",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/sales-calls/analysis/{{analysisId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "sales-calls", "analysis", "{{analysisId}}"]
+        },
+        "description": "Poll every ~5 seconds until status is completed (about 20-40 seconds).\n\nWHILE RUNNING: status is queued / analyzing / scoring, and scores is null.\nWHEN DONE: the full report.\n\nCHECK BY EYE:\n- scores.overall_100 is a number, scores.band is null (thresholds are not configured)\n- scores.weighting = \"equal_unweighted_placeholder\" (no business weights set)\n- transcript.speakers: speaker_0 = sales_rep, speaker_1 = customer\n- analysis_quality.degraded = true and warnings include no_timestamps\n  (a pasted transcript has no timings, so tone criteria are not applicable)\n- every criterion with a rating carries evidence with verified: true\n- call.disposition_source = \"rep_reported\" — the AI never replaces your CRM outcome"
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "if (b.status !== 'completed') {",
+              "  console.log('Still running:', b.status, '— send this request again in a few seconds.');",
+              "  pm.test('scores are null while running', () => pm.expect(b.scores).to.be.null);",
+              "  return;",
+              "}",
+              "pm.test('completed', () => pm.expect(b.status).to.eql('completed'));",
+              "pm.test('overall score present', () => pm.expect(b.scores.overall_100).to.be.a('number'));",
+              "pm.test('six stages', () => pm.expect(b.scores.stages).to.have.lengthOf(6));",
+              "pm.test('no band invented', () => pm.expect(b.scores.band).to.be.null);",
+              "pm.test('placeholder weighting is declared', () => pm.expect(b.scores.weighting).to.eql('equal_unweighted_placeholder'));",
+              "pm.test('rep identified', () => pm.expect(b.transcript.speakers[0].role).to.eql('sales_rep'));",
+              "pm.test('disposition is the reps own', () => pm.expect(b.call.disposition_source).to.eql('rep_reported'));",
+              "pm.test('no timings on a pasted transcript', () => pm.expect(b.transcript.timestamps_available).to.be.false);",
+              "const scored = b.stage_evaluations.flatMap(s => s.criteria).filter(c => c.status === 'scored');",
+              "pm.test('scored criteria exist', () => pm.expect(scored.length).to.be.above(0));",
+              "pm.test('all evidence verified', () => {",
+              "  scored.forEach(c => c.evidence.forEach(e => pm.expect(e.verified, c.criterion_id).to.be.true));",
+              "});",
+              "console.log('overall', b.scores.overall_100 + '/100', '| stages',",
+              "  b.scores.stages.map(s => s.stage_id + '=' + s.score).join(' '));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Idempotency — resubmit the same call costs nothing",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"call_id\": \"{{callId}}\",\n  \"transcript\": {\n    \"format\": \"text\",\n    \"text\": \"Rajan: Hi Meera, this is Rajan Kumar from EdTech Pro. Is now a good time to talk?\\nMeera: Yes that works. I registered for the masterclass last month.\\nRajan: Wonderful. What is driving your interest in the programme right now?\\nMeera: My main problem is I do not have a recognised certification for senior roles.\\nRajan: Understood. The Career Accelerator ends with an accredited certificate from our university partner.\\nMeera: That sounds useful but the fee is higher than I expected.\\nRajan: I hear you. We offer a three part instalment plan, so it is spread over the programme. Shall I send the payment link today?\\nMeera: Yes please send it across and I will complete it this evening.\"\n  },\n  \"call_metadata\": {\n    \"direction\": \"outbound\",\n    \"disposition\": \"SQL\",\n    \"duration_seconds\": 420,\n    \"remarks\": \"Discussed EMI options\"\n  },\n  \"rep\": { \"name\": \"Rajan Kumar\", \"designation\": \"Senior Counsellor\" },\n  \"customer\": {\n    \"name\": \"Meera Patel\",\n    \"email\": \"meera@example.com\",\n    \"phone\": \"+919876543210\",\n    \"region\": \"Maharashtra\",\n    \"designation\": \"Operations Manager\",\n    \"awareness_level\": \"problem-aware\"\n  },\n  \"product\": {\n    \"name\": \"Career Accelerator\",\n    \"price\": 200000,\n    \"currency\": \"INR\",\n    \"complexity\": \"high\",\n    \"is_structured_programme\": true,\n    \"sold_on_call\": false\n  }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/sales-calls/analyze",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "sales-calls", "analyze"]
+        },
+        "description": "Byte-for-byte the same body as request 2, with the same call_id.\n\nEXPECT: idempotent_hit = true and the SAME analysis_id. No second Gemini call,\nno second charge. This is what protects you from a double-click in the CRM.\n\nRun this only AFTER request 3 shows completed."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('recognised as a duplicate', () => pm.expect(b.idempotent_hit).to.be.true);",
+              "pm.test('same analysis returned', () => pm.expect(b.analysis_id).to.eql(pm.collectionVariables.get('analysisId')));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Submit — audio (Deepgram transcription + diarization)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"call_id\": \"postman_audio_{{$timestamp}}\",\n  \"audio\": { \"url\": \"{{audioUrl}}\" },\n  \"call_metadata\": {\n    \"direction\": \"outbound\",\n    \"disposition\": \"MQL\",\n    \"remarks\": \"Recording uploaded by the rep\"\n  },\n  \"rep\": { \"name\": \"Rajan Kumar\" },\n  \"customer\": { \"name\": \"Meera Patel\", \"region\": \"Maharashtra\" },\n  \"product\": { \"name\": \"Career Accelerator\", \"price\": 200000, \"currency\": \"INR\" }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/sales-calls/analyze",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "sales-calls", "analyze"]
+        },
+        "description": "IMPORTANT: `audioUrl` must be reachable by Deepgram over the public internet.\nA localhost path or a private bucket URL will fail with audio_unreachable.\n\nThe default is a short public sample. It is ONE speaker and is NOT a sales call,\nso expect a low score and many not-applicable criteria — that is correct\nbehaviour, and it proves the transcription and diarization path works.\n\nFor a meaningful score, replace `audioUrl` with a real two-party call recording\n(a signed URL from your storage is ideal)."
+        },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('queued', () => pm.expect(b.status).to.eql('queued'));",
+              "pm.collectionVariables.set('audioAnalysisId', b.analysis_id);",
+              "console.log('Poll with request 6. analysis_id =', b.analysis_id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Poll — audio analysis",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/sales-calls/analysis/{{audioAnalysisId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "sales-calls", "analysis", "{{audioAnalysisId}}"]
+        },
+        "description": "Poll until completed. Watch status go transcribing -> analyzing -> scoring.\n\nCHECK BY EYE:\n- transcript.source = \"deepgram\", timestamps_available = true\n- transcript.segments have real start/end seconds — this is what lets the UI jump\n  the audio player to the moment behind a score\n- transcript.speakers shows the diarized speakers; roles stay \"unknown\" unless\n  someone is identifiable from the conversation\n- processing.transcription_ms and audio_seconds_submitted are populated\n\nWith the default single-speaker sample you should also see the warning\n\"single_speaker_detected\" — the system reports it rather than pretending."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "if (b.status === 'failed') {",
+              "  console.error('FAILED:', b.availability.reason, '-', b.availability.message);",
+              "  pm.test('no fabricated scores on failure', () => pm.expect(b.scores).to.be.null);",
+              "  return;",
+              "}",
+              "if (b.status !== 'completed') { console.log('Still running:', b.status); return; }",
+              "pm.test('transcribed by deepgram', () => pm.expect(b.transcript.source).to.eql('deepgram'));",
+              "pm.test('timings present', () => pm.expect(b.transcript.timestamps_available).to.be.true);",
+              "pm.test('segments have real timings', () => pm.expect(b.transcript.segments[0].start).to.be.a('number'));",
+              "pm.test('transcription timing recorded', () => pm.expect(b.processing.transcription_ms).to.be.a('number'));",
+              "console.log('speakers:', b.transcript.speaker_count, '| segments:', b.transcript.segment_count,",
+              "  '| confidence:', b.transcript.quality.mean_confidence, '| warnings:', b.transcript.quality.warnings.join(','));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Failure — no audio and no transcript",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"call_id\": \"postman_empty_{{$timestamp}}\",\n  \"call_metadata\": { \"disposition\": \"No Answer\" },\n  \"rep\": { \"name\": \"Rajan Kumar\" }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/sales-calls/analyze",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "sales-calls", "analyze"]
+        },
+        "description": "Nothing to analyse.\n\nEXPECT: HTTP 200 (not 422) with status \"failed\" and reason\n\"no_audio_or_transcript\". Nothing is spent — neither Deepgram nor Gemini is\ncalled. This matches the always-200 contract used across this API: the backend\ngets a stable reason code instead of an exception."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200, not a 4xx', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('failed with a stated reason', () => pm.expect(b.status).to.eql('failed'));",
+              "pm.test('reason code is stable', () => pm.expect(b.reason).to.eql('no_audio_or_transcript'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Failure — unreachable recording URL",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"call_id\": \"postman_badurl_{{$timestamp}}\",\n  \"audio\": { \"url\": \"https://example.invalid/does-not-exist.mp3\" },\n  \"call_metadata\": { \"disposition\": \"SQL\" },\n  \"rep\": { \"name\": \"Rajan Kumar\" }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/sales-calls/analyze",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "sales-calls", "analyze"]
+        },
+        "description": "Submit, then poll the returned analysis_id.\n\nEXPECT eventually: status \"failed\" with a transcription reason, and\nscores: null. A failed analysis NEVER produces a neutral scorecard — a sales\nmanager cannot tell an invented evaluation from a real one, so we do not make\none.\n\nThis takes ~15-30s because the provider error is retried with backoff."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.collectionVariables.set('analysisId', b.analysis_id);",
+              "console.log('Poll request 3 with this id to see the failure:', b.analysis_id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "9. Lookup by call_id",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/sales-calls/analysis/by-call/{{callId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "sales-calls", "analysis", "by-call", "{{callId}}"]
+        },
+        "description": "The most recent analysis for a call — for a backend that kept the call_id but\nnot the analysis_id.\n\nEXPECT: the same report as request 3. An unknown call_id returns 404."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('same call', () => pm.expect(pm.response.json().call_id).to.eql(pm.collectionVariables.get('callId')));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "10. Unknown analysis_id returns 404",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/sales-calls/analysis/does-not-exist",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "sales-calls", "analysis", "does-not-exist"]
+        },
+        "description": "EXPECT: 404."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('404', () => pm.response.to.have.status(404));"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "11. Rescore — free, no provider calls",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/sales-calls/analysis/{{analysisId}}/rescore",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "sales-calls", "analysis", "{{analysisId}}", "rescore"]
+        },
+        "description": "Recomputes the scores from the STORED RATINGS under the current framework\nconfiguration. No Deepgram call, no Gemini call, no cost.\n\nRun it as-is and the score will not change — nothing has been reconfigured.\n\nTO SEE IT WORK: edit sales_call_analyzer/sales_framework.json, set\n\"rating_scale\" to { \"absent\": 0.0, \"weak\": 0.2, \"adequate\": 0.5, \"strong\": 1.0 },\nbump \"framework_version\" to \"sales_v2\", restart the server, then run this again.\nThe score moves and rating_scale_mode becomes \"configured\" — which is exactly how\nmanagement's weights get applied to calls that were already analysed.\n\nRequires analysisId to point at a COMPLETED analysis (run 2 and 3 first);\notherwise you get 409."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 409) {",
+              "  console.log('409 is correct if that analysis is not completed — run requests 2 and 3 first.');",
+              "  return;",
+              "}",
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('scores recomputed', () => pm.expect(b.scores.overall_100).to.be.a('number'));",
+              "console.log('overall now', b.scores.overall_100 + '/100',",
+              "  '| rating_scale_mode:', b.scores.rating_scale_mode,",
+              "  '| framework:', b.scores.framework_version);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "12. Multi-speaker — roles are not forced",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"call_id\": \"postman_multi_{{$timestamp}}\",\n  \"transcript\": {\n    \"format\": \"structured\",\n    \"segments\": [\n      { \"speaker_id\": \"speaker_0\", \"start\": 0.0, \"end\": 5.0, \"text\": \"Good morning, this is Rajan Kumar calling from EdTech Pro.\" },\n      { \"speaker_id\": \"speaker_1\", \"start\": 5.2, \"end\": 9.0, \"text\": \"Hello, my husband and my manager have joined the call as well.\" },\n      { \"speaker_id\": \"speaker_2\", \"start\": 9.2, \"end\": 15.0, \"text\": \"Yes, I wanted to understand the fee structure before we decide anything.\" },\n      { \"speaker_id\": \"speaker_3\", \"start\": 15.2, \"end\": 21.0, \"text\": \"And I would like to know how much time off she will need for this.\" },\n      { \"speaker_id\": \"speaker_1\", \"start\": 21.2, \"end\": 26.0, \"text\": \"We will make the decision together after this call is over.\" }\n    ]\n  },\n  \"call_metadata\": { \"direction\": \"outbound\", \"disposition\": \"MQL\" },\n  \"rep\": { \"name\": \"Rajan Kumar\" },\n  \"customer\": { \"name\": \"Meera Patel\" },\n  \"product\": { \"name\": \"Career Accelerator\", \"price\": 200000, \"currency\": \"INR\" }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/sales-calls/analyze",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "sales-calls", "analyze"]
+        },
+        "description": "A four-party conference call, sent as a STRUCTURED transcript — note that\nDeepgram is skipped entirely, because a structured transcript already contains\nwhat it would produce.\n\nPoll with request 3 (the analysis_id is saved automatically).\n\nCHECK: speaker_0 is sales_rep (they introduce themselves), but NOBODY is marked\ncustomer — nobody identified themselves as Meera, so speakers 1, 2 and 3 stay\n\"participant\" with name: null. The system declines to guess rather than putting\na wrong name in front of a manager."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.collectionVariables.set('analysisId', pm.response.json().analysis_id);",
+              "console.log('Poll with request 3 — expect 4 speakers, no customer role assigned.');"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

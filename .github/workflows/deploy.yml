@@ -60,6 +60,18 @@ jobs:
           GEMINI_API_KEY: ci-import-check-not-a-real-key
         run: python -c "import app; print('OK -', len(app.app.routes), 'routes')"
 
+      - name: Run Sales Call Analyzer tests
+        # Only the sales_call suite: it is entirely offline - Deepgram is an
+        # httpx MockTransport, Gemini a fake client, MongoDB a fake collection -
+        # so it needs no keys, no database and no network. The
+        # purchase-probability tests deliberately read the real PostgreSQL and
+        # would fail on a runner, so they are not run here.
+        env:
+          GEMINI_API_KEY: ci-import-check-not-a-real-key
+        run: |
+          pip install pytest
+          python -m pytest tests/ -q -k "sales_call"
+
   deploy:
     name: Deploy
     needs: verify
