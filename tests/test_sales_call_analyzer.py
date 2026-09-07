@@ -342,3 +342,36 @@ def test_injected_instructions_stay_inside_the_fence(cfg, signals):
     assert prompt.index(an.TRANSCRIPT_OPEN) < injected_at < prompt.index(an.TRANSCRIPT_CLOSE)
     assert injected_at < prompt.index("YOUR TASK")
     assert "[1] speaker_1" in prompt
+
+
+def test_thinking_and_total_tokens_are_recorded(cfg, signals):
+    """Gemini prices thinking tokens at the output rate but reports them apart
+    from candidates_token_count. A cost estimate built on output alone is too
+    low, so all of it is captured."""
+
+    class FullUsage:
+        prompt_token_count = 7255
+        candidates_token_count = 5858
+        thoughts_token_count = 1200
+        total_token_count = 14313
+        cached_content_token_count = 0
+
+    client = FakeClient([FakeResponse(good_output(cfg), FullUsage())])
+    meta = run(an.analyze(client, "gemini-test", make_context(), make_transcript(),
+                          cfg, signals))["meta"]
+    assert meta["llm_input_tokens"] == 7255
+    assert meta["llm_output_tokens"] == 5858
+    assert meta["llm_thinking_tokens"] == 1200
+    assert meta["llm_total_tokens"] == 14313
+    # The provider's own total must reconcile with the parts we report.
+    assert (meta["llm_input_tokens"] + meta["llm_output_tokens"]
+            + meta["llm_thinking_tokens"]) == meta["llm_total_tokens"]
+
+
+def test_missing_thinking_tokens_is_not_an_error(cfg, signals):
+    """Older responses have no thoughts_token_count; the fields stay null."""
+    client = FakeClient([FakeResponse(good_output(cfg), FakeUsage())])
+    meta = run(an.analyze(client, "gemini-test", make_context(), make_transcript(),
+                          cfg, signals))["meta"]
+    assert meta["llm_input_tokens"] == 1234
+    assert meta["llm_thinking_tokens"] is None
