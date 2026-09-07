@@ -581,7 +581,9 @@ async def analyze(client, model: str, ctx: AnalysisContext,
     started = time.monotonic()
     attempts = 0
     last_error: Optional[Exception] = None
-    usage: dict[str, Optional[int]] = {"input_tokens": None, "output_tokens": None}
+    usage: dict[str, Optional[int]] = {
+        "input_tokens": None, "output_tokens": None,
+        "thinking_tokens": None, "total_tokens": None, "cached_tokens": None}
 
     for attempt in range(2):
         attempts += 1
@@ -599,6 +601,13 @@ async def analyze(client, model: str, ctx: AnalysisContext,
         if meta is not None:
             usage["input_tokens"] = getattr(meta, "prompt_token_count", None)
             usage["output_tokens"] = getattr(meta, "candidates_token_count", None)
+            # Gemini prices thinking tokens at the OUTPUT rate but reports them
+            # separately from candidates_token_count, so a bill estimated from
+            # output alone is too low. total_token_count is the provider's own
+            # sum and is the number to reconcile a cost estimate against.
+            usage["thinking_tokens"] = getattr(meta, "thoughts_token_count", None)
+            usage["total_tokens"] = getattr(meta, "total_token_count", None)
+            usage["cached_tokens"] = getattr(meta, "cached_content_token_count", None)
 
         try:
             analysis = validate_output(_parse_json(response.text), cfg, signals)
@@ -619,6 +628,9 @@ async def analyze(client, model: str, ctx: AnalysisContext,
                 "signals_version": signals["signals_version"],
                 "llm_input_tokens": usage["input_tokens"],
                 "llm_output_tokens": usage["output_tokens"],
+                "llm_thinking_tokens": usage["thinking_tokens"],
+                "llm_total_tokens": usage["total_tokens"],
+                "llm_cached_tokens": usage["cached_tokens"],
             },
         }
 

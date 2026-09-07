@@ -77,17 +77,25 @@ def scored_lead_id(conn):
 
 @pytest.fixture(scope="module")
 def unscorable_lead_id(conn):
-    """A real lead the model cannot score but the CRM still knows things about."""
+    """A real lead the model cannot score but the CRM still knows things about.
+
+    Deliberately one that has NOT paid, and deliberately ordered: this fixture
+    feeds the assertion that an unscorable lead gets no invented lifetime value,
+    and a lead with recorded revenue reports that revenue instead - correctly, but
+    it is a different case and belongs to a different test.
+    """
     with conn.cursor() as cur:
         cur.execute("""
             SELECT l.id FROM leads l
             WHERE l.score IS NOT NULL
+              AND COALESCE(l.revenue, 0) = 0
               AND NOT EXISTS (SELECT 1 FROM touchpoint_events te
                               WHERE te.lead_id = l.id AND te.type = 'form_submit')
+            ORDER BY l.created_at, l.id
             LIMIT 1""")
         row = cur.fetchone()
     if not row:
-        pytest.skip("no unscorable lead with a CRM score available")
+        pytest.skip("no unpaid unscorable lead with a CRM score available")
     return str(row[0])
 
 

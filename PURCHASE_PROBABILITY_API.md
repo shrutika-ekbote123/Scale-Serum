@@ -520,9 +520,75 @@ absent signal is reported by its layer's `available: false`, not as a `0` row.
 snapshot (160 / 14,692), not a design constant. Do not replace it with a
 round number to make the panel add up more neatly.
 
+### The `summary` block — why this lead has this probability
+
+Two or three plain sentences answering the only question a salesperson asks of
+this endpoint. **Render `summary.text`.** Nothing else is required.
+
+```json
+{
+  "available": true,
+  "headline": "1.28% purchase probability - above average",
+  "text": "This lead has a 1.28% purchase probability because they were active recently, they are browsing from the United States and they visited high-intent pages such as pricing or checkout. However, their seniority sits below the brand's target and they used a personal email for a business-to-business brand, which keeps it close to the typical 1.09% baseline.",
+  "sentences": [ "This lead has a 1.28% ...", "However, ..." ],
+  "positive": [ "they were active recently", "they are browsing from the United States", "..." ],
+  "negative": [ "their seniority sits below the brand's target", "..." ],
+  "standing": "above average",
+  "counts": { "total": 8, "positive": 6, "negative": 2 },
+  "note": "Engagement and brand-fit signals describe how well this lead fits the brand. ...",
+  "basis": "Assembled from the factors listed above. ..."
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `summary.available` | `bool` | `false` when the lead could not be scored. Branch on this, never on key existence. |
+| `summary.headline` | `string \| null` | One line, safe as a card title. |
+| `summary.text` | `string \| null` | **The field to render.** Two or three sentences, under 460 characters. |
+| `summary.sentences` | `array` | The same sentences separately, for a UI that wants short lines. |
+| `summary.positive` / `.negative` | `array` | Up to three reasons a side, strongest first, as plain clauses. |
+| `summary.standing` | `string \| null` | `well above average` · `above average` · `around average` · `below average` · `well below average`. Use it to colour a chip without parsing the prose. |
+| `summary.counts` | `object` | `total`, `positive`, `negative` across all factors — not just the ones quoted. |
+| `summary.note` | `string \| null` | Present only when engagement or brand-fit signals appear. See below. |
+| `summary.basis` | `string` | Provenance sentence. Safe to display. |
+
+**Shape.** `This lead has a X% purchase probability because <2–3 reasons in
+favour>. However, <1–3 reasons against>, which keeps it <standing>.` The
+`However` clause is dropped when there is nothing against, and the `because`
+clause is dropped when there is nothing in favour.
+
+**It explains `purchase_probability`, never `lead_priority`.** Those are
+different numbers on different scales; the ranking score never appears in the
+prose and a test asserts it.
+
+**It is assembled, not generated.** No model is called. Every phrase is a
+`clause` from `factor_language.json` belonging to a factor that actually survived
+the ranking, and every number already appears elsewhere in the response — a test
+fails the build if a figure shows up that the response does not otherwise carry.
+Contribution values are never exposed: they are model signals, not percentages
+that sum to the probability.
+
+**Written for a non-technical reader.** No log-odds, coefficients,
+contributions, percentiles, deciles or internal field names, and no claim that a
+lead will or will not buy. A signal *supports*, *helps* or *holds back* a
+probability. Tests enforce the whole list.
+
+**About `note`.** The reasons in the prose come from all three sources, because
+they are all part of why this lead looks the way it does to a salesperson. The
+percentage itself comes only from the form submission the lead was scored on —
+`note` says that in one plain sentence, so the caveat is available to the UI
+without dragging it into a sentence written for a salesperson. Show it as a
+tooltip, or ignore it. The precise split is always in `top_factors[].affects`.
+
 ### Editing the copy
 
-All wording lives in `purchase_probability_model/factor_language.json`. Changing
+All wording lives in `purchase_probability_model/factor_language.json` — factor
+titles and details under `features` / `signals`, the narrative `clause` for each
+one beside it, and the summary's sentence templates and standing bands under
+`summary`. A `clause` is a verb phrase with an implied subject ("they signed up
+with a work email address") so it reads mid-sentence; a `label` is a card
+headline and does not. Keep clauses free of commas — several are joined into one
+sentence. Changing
 a title or a sentence needs no code change and cannot alter a score. The one
 rule: sentences describe **associations**, never causes — a logistic regression
 on observational data cannot support "caused", "because" or "drives", and
@@ -811,6 +877,12 @@ salesperson something false.
   "decile": null,
   "priority": "Unavailable",
   "top_factors": [],
+  "summary": {
+    "available": false, "headline": null, "text": null, "sentences": [],
+    "positive": [], "negative": [], "standing": null,
+    "counts": { "total": 0, "positive": 0, "negative": 0 },
+    "note": null, "basis": "Assembled from the factors listed above. ..."
+  },
   "model_features": null,
   "touchpoint_count": 0,
   "touchpoints": [],

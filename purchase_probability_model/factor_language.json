@@ -1,31 +1,33 @@
 {
   "language_version": "plain_v2",
   "purpose": "Presentation copy only. Nothing here changes a probability, a coefficient or a ranking. It renames and explains factors that already exist, so a salesperson can read them.",
-
   "label_contract": "`label` is the ONE LINE the lead card prints. It must answer 'why did this factor move the score' on its own, with no tooltip and no second field. Shape: '<what was observed> - <why that matters>'. It replaces the old technical names ('Lead locale'), which named the input instead of giving the reason.",
-
   "non_causal_rule": "Every sentence describes an ASSOCIATION observed in training data. Never 'caused', 'because', 'due to', 'drives' or 'makes'. A logistic coefficient is not a cause.",
-
   "comparison_note": "Categorical factors are scored against a reference level, so their wording is comparative on purpose: seniority against an individual contributor, email against Gmail, locale against India. 'Converts above Gmail' is the literal meaning of the coefficient - do not reword it into an absolute claim.",
-
   "impact_bands": [
-    { "min_abs": 0.5, "word": "Strong" },
-    { "min_abs": 0.2, "word": "Moderate" },
-    { "min_abs": 0.0, "word": "Slight" }
+    {
+      "min_abs": 0.5,
+      "word": "Strong"
+    },
+    {
+      "min_abs": 0.2,
+      "word": "Moderate"
+    },
+    {
+      "min_abs": 0.0,
+      "word": "Slight"
+    }
   ],
-
   "sources": {
     "model": "Form submission",
     "engagement": "Touchpoint history",
     "brand_brain": "Brand profile"
   },
-
   "affects": {
     "model": "purchase_probability",
     "engagement": "lead_priority",
     "brand_brain": "lead_priority"
   },
-
   "features": {
     "f_seniority": {
       "title": "Job seniority",
@@ -33,83 +35,93 @@
         "founder_c_level": {
           "title": "Founder or C-level contact",
           "reason": "senior decision-maker",
-          "detail": "Founders and C-level contacts convert more often than individual contributors."
+          "detail": "Founders and C-level contacts convert more often than individual contributors.",
+          "clause": "the contact is a founder or C-level decision-maker"
         },
         "vp_director": {
           "title": "VP or Director-level contact",
           "reason": "senior decision-maker",
-          "detail": "VP and Director-level contacts convert more often than individual contributors."
+          "detail": "VP and Director-level contacts convert more often than individual contributors.",
+          "clause": "the contact is at VP or Director level"
         },
         "manager": {
           "title": "Manager-level contact",
           "reason": "mid-level authority, close to the individual-contributor rate",
-          "detail": "Manager-level contacts convert at close to the same rate as individual contributors."
+          "detail": "Manager-level contacts convert at close to the same rate as individual contributors.",
+          "clause": "the contact is at manager level"
         },
         "individual_contributor": {
           "title": "Individual contributor",
           "reason": "the comparison point for seniority",
-          "detail": "This is the most common role in the data and is used as the comparison point."
+          "detail": "This is the most common role in the data and is used as the comparison point.",
+          "clause": "the contact is an individual contributor"
         },
         "other": {
           "title": "Student or early-career contact",
           "reason": "rarely the person who buys",
-          "detail": "Students and early-career contacts convert less often than individual contributors."
+          "detail": "Students and early-career contacts convert less often than individual contributors.",
+          "clause": "the contact is a student or early-career"
         }
       }
     },
-
     "f_email_class": {
       "title": "Type of email address",
       "values": {
         "corporate": {
           "title": "Work email address",
           "reason": "converts above Gmail",
-          "detail": "Leads who sign up with a work email convert more often than those using Gmail."
+          "detail": "Leads who sign up with a work email convert more often than those using Gmail.",
+          "clause": "they signed up with a work email address"
         },
         "other_freemail": {
           "title": "Personal email (Yahoo, Outlook, iCloud)",
           "reason": "converts above Gmail",
-          "detail": "These addresses convert more often than Gmail in the training data."
+          "detail": "These addresses convert more often than Gmail in the training data.",
+          "clause": "they signed up with a personal email address"
         },
         "gmail": {
           "title": "Gmail address",
           "reason": "the comparison point for email type",
-          "detail": "Gmail is the most common address type in the data and is used as the comparison point."
+          "detail": "Gmail is the most common address type in the data and is used as the comparison point.",
+          "clause": "they signed up with a Gmail address"
         }
       }
     },
-
     "f_locale": {
       "title": "Where the lead is browsing from",
       "values": {
         "en-US": {
           "title": "Browsing from the United States",
           "reason": "converts above the India baseline",
-          "detail": "US leads convert more often than leads in India."
+          "detail": "US leads convert more often than leads in India.",
+          "clause": "they are browsing from the United States"
         },
         "en-GB": {
           "title": "Browsing from the United Kingdom",
           "reason": "level with the India baseline",
-          "detail": "UK leads convert at close to the same rate as leads in India."
+          "detail": "UK leads convert at close to the same rate as leads in India.",
+          "clause": "they are browsing from the United Kingdom"
         },
         "en": {
           "title": "English locale, region not reported",
           "reason": "converts above the India baseline",
-          "detail": "Leads whose browser reports plain English convert more often than leads in India."
+          "detail": "Leads whose browser reports plain English convert more often than leads in India.",
+          "clause": "their locale is English with no region reported"
         },
         "other": {
           "title": "Locale outside the main regions",
           "reason": "converts above the India baseline",
-          "detail": "Leads from other locales convert more often than leads in India."
+          "detail": "Leads from other locales convert more often than leads in India.",
+          "clause": "they are browsing from outside the main regions"
         },
         "en-IN": {
           "title": "Browsing from India",
           "reason": "the comparison point for locale",
-          "detail": "India is the most common locale in the data and is used as the comparison point."
+          "detail": "India is the most common locale in the data and is used as the comparison point.",
+          "clause": "they are browsing from India"
         }
       }
     },
-
     "f_company_len": {
       "title": "Company details filled in",
       "label_positive": "Company field filled to {value} characters - fuller detail converts slightly better",
@@ -117,17 +129,20 @@
       "label_zero": "No company name provided",
       "detail_positive": "The company field has {value} characters. Leads who fill this in more fully convert slightly more often.",
       "detail_negative": "The company field has only {value} characters. Leads who leave it sparse convert slightly less often.",
-      "detail_zero": "No company name was provided."
+      "detail_zero": "No company name was provided.",
+      "clause_positive": "they filled in their company details",
+      "clause_negative": "their company information is limited",
+      "clause_zero": "they left the company field empty"
     },
-
     "f_company_is_placeholder": {
       "title": "Company field looks like a placeholder",
       "label_positive": "Company field is filler text such as 'na' or 'test' - these leads convert less often",
       "label_negative": "Company field is filler text such as 'na' or 'test' - these leads convert less often",
       "detail_positive": "The company field contains filler text such as 'na' or 'test'. These leads convert less often.",
-      "detail_negative": "The company field contains filler text such as 'na' or 'test'. These leads convert less often."
+      "detail_negative": "The company field contains filler text such as 'na' or 'test'. These leads convert less often.",
+      "clause_positive": "the company field contains filler text",
+      "clause_negative": "the company field contains filler text"
     },
-
     "f_hour_time_pattern": {
       "title": "Time of day the form was submitted",
       "label": "Submitted around {hour} - {window_reason}",
@@ -143,71 +158,167 @@
         "morning": "Morning sign-ups convert at close to the average rate.",
         "afternoon": "Afternoon sign-ups convert more often than overnight ones.",
         "evening": "Evening sign-ups convert at close to the average rate."
+      },
+      "clause_windows": {
+        "night": "they signed up overnight when sign-ups convert less often",
+        "morning": "they signed up in the morning when sign-ups convert close to average",
+        "afternoon": "they signed up in the afternoon when sign-ups convert more often",
+        "evening": "they signed up in the evening when sign-ups convert close to average"
       }
     }
   },
-
   "signals": {
     "e_ad_click_arrival": {
       "title": "Arrived from a paid ad click",
       "reason": "higher intent than a cold arrival",
-      "detail": "This lead reached the site through a paid ad rather than arriving cold."
+      "detail": "This lead reached the site through a paid ad rather than arriving cold.",
+      "clause_positive": "they arrived through a paid ad rather than cold",
+      "clause_negative": "they did not arrive through a paid ad"
     },
     "e_click_volume": {
       "title": "Clicked things on the site",
       "reason": "active rather than passive browsing",
-      "detail": "Clicking buttons and calls-to-action is a stronger signal than passive reading."
+      "detail": "Clicking buttons and calls-to-action is a stronger signal than passive reading.",
+      "clause_positive": "they actively clicked around the site",
+      "clause_negative": "they showed little active clicking on the site"
     },
     "e_high_intent_pages": {
       "title": "Visited high-intent pages",
       "reason": "pricing and checkout pages sit close to a buying decision",
-      "detail": "Pages such as pricing, checkout, booking or demo are visited close to a buying decision."
+      "detail": "Pages such as pricing, checkout, booking or demo are visited close to a buying decision.",
+      "clause_positive": "they visited high-intent pages such as pricing or checkout",
+      "clause_negative": "they have not visited pricing or checkout pages"
     },
     "e_page_view_volume": {
       "title": "Browsed multiple pages",
       "reason": "browsing depth separates a visitor from a bounce",
-      "detail": "Depth of browsing separates a serious visitor from a bounce."
+      "detail": "Depth of browsing separates a serious visitor from a bounce.",
+      "clause_positive": "they browsed several pages",
+      "clause_negative": "they viewed very few pages"
     },
     "e_session_return": {
       "title": "Came back after the first visit",
       "reason": "sustained interest rather than a single impulse",
-      "detail": "Returning later shows sustained interest rather than a single impulse."
+      "detail": "Returning later shows sustained interest rather than a single impulse.",
+      "clause_positive": "they came back across more than one visit",
+      "clause_negative": "they have not returned since their first visit"
     },
     "e_recency": {
       "title": "Recently active",
       "reason": "measured against this brand's own sales cycle, not a fixed number of days",
-      "detail": "Interest goes stale. This is measured against the brand's own sales cycle, not a fixed number of days."
+      "detail": "Interest goes stale. This is measured against the brand's own sales cycle, not a fixed number of days.",
+      "clause_positive": "they were active recently",
+      "clause_negative": "it has been a while since they were last active"
     },
     "e_engagement_velocity": {
       "title": "Activity was concentrated",
       "reason": "a burst reads differently from the same activity spread thin",
-      "detail": "A burst of activity in a short window reads differently from the same activity spread thin."
+      "detail": "A burst of activity in a short window reads differently from the same activity spread thin.",
+      "clause_positive": "their activity was concentrated rather than spread thin",
+      "clause_negative": "their activity was thinly spread"
     },
-
     "b_icp_seniority_fit": {
       "title": "Fit with the brand's ideal customer",
       "reason": "compared against the seniority this brand named during onboarding",
-      "detail": "Compared against the seniority this brand named as its ideal customer during onboarding."
+      "detail": "Compared against the seniority this brand named as its ideal customer during onboarding.",
+      "clause_positive": "they match the seniority this brand targets",
+      "clause_negative": "their seniority sits below the brand's target"
     },
     "b_channel_fit": {
       "title": "Acquisition channel fit",
       "reason": "compared against the channels this brand invests in",
-      "detail": "Compared against the acquisition channels this brand named during onboarding."
+      "detail": "Compared against the acquisition channels this brand named during onboarding.",
+      "clause_positive": "they arrived through a channel this brand invests in",
+      "clause_negative": "they arrived outside the channels this brand invests in"
     },
     "b_business_type_email_fit": {
       "title": "Contact type vs the brand's business model",
       "reason": "a B2B brand expects work emails, a B2C brand expects personal ones",
-      "detail": "A B2B brand expects work emails; a B2C brand expects personal ones."
+      "detail": "A B2B brand expects work emails; a B2C brand expects personal ones.",
+      "clause_positive": "their email type suits this brand's business model",
+      "clause_negative": "they used a personal email for a business-to-business brand"
     },
     "b_language_locale_fit": {
       "title": "Language fit with the brand's market",
       "reason": "compared against the market this brand named during onboarding",
-      "detail": "Compared against the market this brand named during onboarding."
+      "detail": "Compared against the market this brand named during onboarding.",
+      "clause_positive": "their language matches the market this brand sells in",
+      "clause_negative": "their language does not match the market this brand sells in"
     },
     "b_sales_cycle_timing": {
       "title": "Lead age against the brand's sales cycle",
       "reason": "a two-week-old lead is fresh for a six-month cycle and stale for a same-day one",
-      "detail": "A two-week-old lead is fresh for a six-month cycle and stale for a same-day one."
+      "detail": "A two-week-old lead is fresh for a six-month cycle and stale for a same-day one.",
+      "clause_positive": "the lead is still fresh for this brand's sales cycle",
+      "clause_negative": "the lead is going stale for this brand's sales cycle"
     }
-  }
+  },
+  "summary": {
+    "purpose": "Copy for the narrative summary: two or three plain sentences answering 'why are we showing this purchase probability for this lead'. Assembled from factors that already exist; it introduces no number the response does not already carry.",
+    "style_rule": "Written for a salesperson. No log-odds, coefficients, contributions, percentiles, deciles or internal field names. Supportive verbs only - a signal 'supports', 'helps' or 'holds back' a probability; it never causes a purchase and the lead never 'will buy'.",
+    "max_positive": 3,
+    "max_negative": 3,
+    "standing_bands": [
+      {
+        "min_ratio": 2.0,
+        "phrase": "well above the typical {base_rate}% baseline",
+        "short": "well above average",
+        "connector": "still leaving it"
+      },
+      {
+        "min_ratio": 1.15,
+        "phrase": "above the typical {base_rate}% baseline",
+        "short": "above average",
+        "connector": "still leaving it"
+      },
+      {
+        "min_ratio": 0.87,
+        "phrase": "close to the typical {base_rate}% baseline",
+        "short": "around average",
+        "connector": "which keeps it"
+      },
+      {
+        "min_ratio": 0.5,
+        "phrase": "below the typical {base_rate}% baseline",
+        "short": "below average",
+        "connector": "which keeps it"
+      },
+      {
+        "min_ratio": 0.0,
+        "phrase": "well below the typical {base_rate}% baseline",
+        "short": "well below average",
+        "connector": "which keeps it"
+      }
+    ],
+    "templates": {
+      "opening": "This lead has a {percent}% purchase probability because {positives}.",
+      "opening_no_positives": "This lead has a {percent}% purchase probability.",
+      "negatives_after_positives": "However, {negatives}, {connector} {standing}.",
+      "negatives_only": "{negatives_capitalised}, {connector} {standing}.",
+      "positives_only": "Together these signals put the probability {standing}.",
+      "positives_only_no_base": "Together these signals point to stronger intent than the average lead.",
+      "no_factors": "This lead has a {percent}% purchase probability. No single signal stood out strongly enough to highlight.",
+      "unscorable": "There is not enough point-in-time information about this lead to give it a purchase probability.",
+      "positives_only_one": "That signal puts the probability {standing}.",
+      "positives_only_one_no_base": "That signal points to stronger intent than the average lead."
+    },
+    "headline": {
+      "with_base": "{percent}% purchase probability - {short}",
+      "without_base": "{percent}% purchase probability"
+    },
+    "note": "Engagement and brand-fit signals describe how well this lead fits the brand. They inform the lead's ranking; the percentage itself comes from the form submission the lead was scored on.",
+    "basis": "Assembled from the factors listed above. Every number here already appears elsewhere in this response; nothing is recomputed.",
+    "keep_capitalised": [
+      "VP",
+      "English",
+      "Gmail",
+      "Yahoo",
+      "Outlook",
+      "iCloud",
+      "US",
+      "UK",
+      "India"
+    ]
+  },
+  "clause_contract": "`clause` is a sentence fragment for the narrative summary, written as a verb phrase with an implied subject so it reads inside '...because they X, and Y.' The `label` fields are headlines for a card row and do not fit mid-sentence. Same non-causal rule applies: describe what was observed, not what caused a purchase. Keep a clause free of commas: several are joined into one sentence, and internal punctuation makes the list unparseable."
 }

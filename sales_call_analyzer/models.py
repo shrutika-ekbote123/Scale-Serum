@@ -365,6 +365,12 @@ class ProcessingInfo(BaseModel):
     audio_seconds_submitted: Optional[float] = None
     llm_input_tokens: Optional[int] = None
     llm_output_tokens: Optional[int] = None
+    # Billed separately by some providers but folded into the OUTPUT price by
+    # Gemini ("output price including thinking tokens"), so a cost estimate that
+    # ignores it understates the bill.
+    llm_thinking_tokens: Optional[int] = None
+    llm_total_tokens: Optional[int] = None
+    llm_cached_tokens: Optional[int] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
 
