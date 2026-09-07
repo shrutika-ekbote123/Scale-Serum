@@ -408,3 +408,243 @@ def baseline_block(metadata: dict, constants: Optional[dict],
             "score instead, so the rows do not add up to the percentage on screen."
         ),
     }
+
+
+# --------------------------------------------------------------------------- summary
+#
+# Two or three plain sentences answering the only question a salesperson asks of
+# this endpoint: "why are we showing this number for this lead?"
+#
+# It is ASSEMBLED, not generated. Every phrase is a `clause` from
+# factor_language.json belonging to a factor that actually survived the ranking,
+# and every number already appears elsewhere in the response. No model is
+# consulted, so the summary cannot drift from the factors it claims to describe.
+#
+# WHAT IT DESCRIBES
+#     `purchase_probability` - the calibrated model output. Never
+#     `lead_priority`, which is a separate ranking number on a different scale.
+#
+# WHAT IT MUST NOT SAY
+#     Log-odds, coefficients, contributions, percentiles, deciles, feature names.
+#     That a lead will or will not buy. That the factors sum to the percentage.
+#     Tests enforce all of it.
+
+
+def _join_titles(parts: list) -> str:
+    """'a', 'a and b', 'a, b and c' - the Oxford-free serial join.
+
+    Some clauses carry their own comma ("they are browsing from the United
+    States, a locale associated with higher conversion"), and comma-joining
+    those yields a list a reader cannot segment. Semicolons take over when that
+    happens, including before the final 'and'.
+    """
+    parts = [p for p in parts if p]
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return parts[0]
+    messy = any("," in p for p in parts)
+    sep = "; " if messy else ", "
+    tail = "; and " if messy else " and "
+    return f"{sep.join(parts[:-1])}{tail}{parts[-1]}"
+
+
+def _standing(percent: Optional[float], base_rate: Optional[float],
+              lang: dict) -> dict:
+    """Where this probability sits against the training base rate, in words.
+
+    Bands are ratios rather than differences: at a 1.09% base rate, "half a point
+    higher" is a near-doubling, and only the ratio says so. Returns the band,
+    which carries the long `phrase` and the short headline form; empty dict when
+    there is no base rate to compare against.
+    """
+    if percent is None or not base_rate:
+        return {}
+    try:
+        ratio = float(percent) / float(base_rate)
+    except (TypeError, ZeroDivisionError, ValueError):
+        return {}
+    for band in ((lang.get("summary") or {}).get("standing_bands")) or []:
+        if ratio >= float(band.get("min_ratio", 0.0)):
+            return band
+    return {}
+
+
+def _clause(factor: dict, features: Optional[dict], lang: dict) -> Optional[str]:
+    """The narrative fragment for one factor.
+
+    Mirrors the selection `_model_copy` does for labels - categorical features
+    read their level, `f_hour_time_pattern` reads the recovered hour, the rest
+    branch on the sign of the contribution - because a clause that described a
+    different level from the label beside it would be worse than no clause.
+    """
+    feature = str(factor.get("feature") or "")
+    contribution = float(factor.get("contribution") or 0.0)
+    positive = contribution > 0
+
+    spec = ((lang.get("features") or {}).get(feature)) or {}
+    if spec:
+        values = spec.get("values")
+        if values:
+            entry = values.get(str(factor.get("value")))
+            return (entry or {}).get("clause")
+        if feature == "f_hour_time_pattern":
+            hour = _hour_from_cyclic(features or {})
+            if hour is None:
+                return None
+            return (spec.get("clause_windows") or {}).get(_hour_window(hour))
+        if feature == "f_company_len":
+            try:
+                if int(float(factor.get("value"))) <= 0:
+                    return spec.get("clause_zero")
+            except (TypeError, ValueError):
+                pass
+        return spec.get("clause_positive" if positive else "clause_negative")
+
+    signal = ((lang.get("signals") or {}).get(feature)) or {}
+    return signal.get("clause_positive" if positive else "clause_negative")
+
+
+def _clauses(factors: list, features: Optional[dict], lang: dict,
+             limit: int) -> list[str]:
+    """Clauses for the strongest few factors, de-duplicated, order preserved.
+
+    `top_factors` arrives sorted by absolute contribution, so taking from the
+    front is taking the strongest. Two factors can share a clause - seniority and
+    the brand's seniority target, for instance - and saying the same thing twice
+    in one sentence reads as a bug.
+    """
+    out: list[str] = []
+    for f in factors:
+        clause = _clause(f, features, lang)
+        if clause and clause not in out:
+            out.append(clause)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def summary_block(top_factors: Optional[list], why: Optional[dict],
+                  features: Optional[dict] = None,
+                  lead_priority: Optional[dict] = None,
+                  lang: Optional[dict] = None) -> dict:
+    """Why this lead has this purchase probability, in two or three sentences.
+
+    `text` is the field a card renders; nothing else is required. `positive` and
+    `negative` carry the same reasons as separate strings for a chip layout, and
+    `counts` lets a card say "3 in favour, 2 against" without walking the array.
+
+    `lead_priority` is accepted only so `note` can be attached when ranking
+    signals are present. Its score never appears in the prose: this block
+    explains the purchase probability, which is a different number.
+    """
+    lang = lang if lang is not None else load_language()
+    cfg = lang.get("summary") or {}
+    tpl = cfg.get("templates") or {}
+    factors = list(top_factors or [])
+
+    result = ((why or {}).get("result") or {})
+    base = ((why or {}).get("starting_point") or {})
+    percent = result.get("percent")
+    base_rate = base.get("percent")
+    band = _standing(percent, base_rate, lang)
+    standing = ""
+    connector = ""
+    if band:
+        standing = (band.get("phrase") or "").format(base_rate=base_rate)
+        # "However X, which keeps the probability above the baseline" contradicts
+        # itself; a lead sitting above the baseline is held back TO a number that
+        # is still above it. The band carries the verb that agrees with it.
+        connector = band.get("connector") or "which keeps it"
+
+    if percent is None:
+        out = empty_summary()
+        out["text"] = tpl.get("unscorable")
+        return out
+
+    positives = [f for f in factors if float(f.get("contribution") or 0.0) > 0]
+    negatives = [f for f in factors if float(f.get("contribution") or 0.0) < 0]
+    pos_clauses = _clauses(positives, features, lang,
+                           int(cfg.get("max_positive") or 3))
+    neg_clauses = _clauses(negatives, features, lang,
+                           int(cfg.get("max_negative") or 3))
+
+    sentences: list[str] = []
+
+    # 1. The number, and the reasons that support it.
+    if pos_clauses:
+        sentences.append((tpl.get("opening") or "").format(
+            percent=percent, positives=_join_titles(pos_clauses)))
+    elif neg_clauses:
+        sentences.append((tpl.get("opening_no_positives") or "").format(
+            percent=percent))
+    else:
+        sentences.append((tpl.get("no_factors") or "").format(percent=percent))
+
+    # 2. What holds it back, and where that leaves it against a typical lead.
+    if neg_clauses:
+        joined = _join_titles(neg_clauses)
+        if pos_clauses:
+            sentences.append((tpl.get("negatives_after_positives") or "").format(
+                negatives=joined, connector=connector, standing=standing))
+        else:
+            sentences.append((tpl.get("negatives_only") or "").format(
+                negatives_capitalised=joined[0].upper() + joined[1:],
+                connector=connector, standing=standing))
+    elif pos_clauses:
+        # "Together these signals" is wrong when there is only one of them.
+        one = len(pos_clauses) == 1
+        key = "positives_only_one" if one else "positives_only"
+        if not standing:
+            key += "_no_base"
+        sentences.append((tpl.get(key) or "").format(standing=standing))
+
+    sentences = [x.strip() for x in sentences if x and x.strip()]
+    text = " ".join(sentences).strip()
+
+    head = cfg.get("headline") or {}
+    if band:
+        headline = head.get("with_base", "").format(
+            percent=percent, short=band.get("short"))
+    else:
+        headline = head.get("without_base", "").format(percent=percent)
+
+    # Engagement and brand-fit reasons appear in the prose because they are part
+    # of why this lead looks the way it does. The percentage itself came from the
+    # form submission, and `note` says so without dragging the caveat into a
+    # sentence written for a salesperson.
+    has_priors = any(f.get("affects") != "purchase_probability" for f in factors)
+
+    return {
+        "available": bool(text),
+        "headline": headline or None,
+        "text": text or None,
+        "sentences": sentences,
+        "positive": pos_clauses,
+        "negative": neg_clauses,
+        "standing": band.get("short") if band else None,
+        "counts": {
+            "total": len(factors),
+            "positive": len(positives),
+            "negative": len(negatives),
+        },
+        "note": cfg.get("note") if has_priors else None,
+        "basis": cfg.get("basis"),
+    }
+
+
+def empty_summary() -> dict:
+    """Summary block for a lead that could not be scored. Same keys, no prose."""
+    cfg = load_language().get("summary") or {}
+    return {
+        "available": False,
+        "headline": None,
+        "text": None,
+        "sentences": [],
+        "positive": [],
+        "negative": [],
+        "standing": None,
+        "counts": {"total": 0, "positive": 0, "negative": 0},
+        "note": None,
+        "basis": cfg.get("basis"),
+    }

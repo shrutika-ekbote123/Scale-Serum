@@ -662,6 +662,7 @@ def _unavailable(lead_id: str, reason: str, touchpoints: Optional[list] = None,
         "priority": "Unavailable",
         "top_factors": [],
         "why": None,
+        "summary": _explain.empty_summary(),
         "model_factors": [],
         "model_features": None,
         "touchpoint_count": len(tps),
@@ -984,6 +985,9 @@ def predict_for_lead(lead_id: str, conn=None, brand_brain: Optional[dict] = None
         (layers.get("engagement") or {}).get("observed"),
     )
 
+    why = _explain.baseline_block(
+        art["metadata"], art["schema"].get("constants"), prob)
+
     return {
         "lead_id": str(lead_id),
         # Calibrated probability expressed as a percentage. 2.3 means 2.3%.
@@ -999,8 +1003,13 @@ def predict_for_lead(lead_id: str, conn=None, brand_brain: Optional[dict] = None
         # untouched base-model-only list is still available as `model_factors`
         # below, and the raw merged list as `ranking_factors`.
         "top_factors": top_factors,
-        "why": _explain.baseline_block(
-            art["metadata"], art["schema"].get("constants"), prob),
+        "why": why,
+        # The same story as `top_factors`, in one paragraph, for cards that show a
+        # sentence instead of a table. Assembled from the rows above - it adds no
+        # number the response does not already carry. Render `summary.text`.
+        "summary": _explain.summary_block(
+            top_factors, why, features,
+            lead_priority=layers.get("lead_priority")),
         # The calibrated explanation on its own: exactly the factors that sum, in
         # log-odds, to `probability`. Unchanged by the presentation layer, and by
         # the brand brain. Use this, not `top_factors`, for any arithmetic.
