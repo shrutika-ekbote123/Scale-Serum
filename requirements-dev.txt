@@ -1,0 +1,17 @@
+# Development and testing only. NOT installed on the server - deploy.sh installs
+# requirements.txt alone, and nothing in production imports these.
+#
+#   pip install -r requirements-dev.txt
+
+pytest>=8.0.0
+
+# scripts/presign.py - generates a presigned S3 GET URL for Postman testing from
+# the credentials already in .env, because the AWS CLI does not read .env.
+#
+# boto3 moved to requirements.txt at Milestone B - the worker now writes heatmap
+# PNGs to S3 and the API signs read URLs, so it is a production dependency.
+
+# On-screen text. Needs the tesseract BINARY as well as this wrapper:
+#   Windows: winget install UB-Mannheim.TesseractOCR
+#   Linux:   apt install -y tesseract-ocr
+pytesseract>=0.3.10

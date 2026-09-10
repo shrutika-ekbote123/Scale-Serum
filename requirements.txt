@@ -18,3 +18,26 @@ psycopg[binary,pool]>=3.1.0
 # httpx already arrives with google-genai; pinned explicitly because this repo
 # now imports it directly (sales_call_analyzer/deepgram_client.py).
 httpx>=0.27.0
+
+# Vision Lab POST /upload - FastAPI needs this to accept multipart/form-data.
+# app.py only defines the route when it is importable, so a box without it
+# loses the upload endpoint and keeps every other one.
+python-multipart>=0.0.9
+
+# Vision Lab - frame decoding, saliency and region detection run in the
+# vision-worker process (vision_lab/worker.py), not in the API process.
+#
+# SYSTEM DEPENDENCY: ffmpeg must be installed on the box. deploy.sh checks for it
+# and fails the deploy loudly rather than letting every job fail at runtime.
+#   apt install -y ffmpeg
+opencv-python-headless>=4.9.0   # headless: no GUI/X11 libs, which a VPS lacks
+pillow>=10.0.0
+boto3>=1.34.0                   # heatmap PNGs to S3, and presigned read URLs
+
+# OPTIONAL, both degrade with a stated reason rather than failing:
+#   onnxruntime  - the trained saliency model. Without it saliency falls back to
+#                  a classical baseline and the report says saliency_trained=false.
+#   pytesseract  - on-screen text. Without it (or without the tesseract binary)
+#                  word counts are null and Cognitive Demand says ocr_unavailable.
+# onnxruntime>=1.17.0
+# pytesseract>=0.3.10

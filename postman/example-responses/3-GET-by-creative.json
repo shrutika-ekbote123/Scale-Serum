@@ -1,0 +1,1582 @@
+{
+  "request": "GET /api/vision-lab/analysis/by-creative/{creative_id}",
+  "status_code": 200,
+  "response": {
+    "stub": false,
+    "analysis_id": "07dc8103c9644e8fb44f6d6116571cf7",
+    "creative_id": "cre_demo_1789020575",
+    "ad_number": "042",
+    "division": "directors_institute",
+    "status": "completed",
+    "availability": {
+      "available": true,
+      "reason": null,
+      "message": null
+    },
+    "media": {
+      "kind": "video",
+      "duration_seconds": 82.48,
+      "width": 1000,
+      "height": 1500,
+      "frames_analyzed": 120,
+      "sample_fps": 1.4549,
+      "has_audio": true,
+      "codec": "h264",
+      "source_fps": 25.0,
+      "size_bytes": 106786000,
+      "shot_count": 12,
+      "requested_sample_fps": 2.0,
+      "sample_fps_thinned": true,
+      "coverage_seconds": 82.48,
+      "coverage_fraction": 1.0
+    },
+    "vision": {
+      "saliency_method": "onnx",
+      "saliency_model": "UNISAL",
+      "saliency_trained": true,
+      "saliency_licence": "Apache-2.0 (repository; weights committed within it)"
+    },
+    "overall": {
+      "score": 67,
+      "band": null,
+      "band_reason": "thresholds_not_configured",
+      "weighting": "equal_unweighted_placeholder",
+      "metrics_scored": 6,
+      "metrics_missing": []
+    },
+    "summary": "This 82.48s B2B recruitment ad targets aspiring corporate directors by highlighting regulatory turnover at NSE-listed companies and promoting a qualifying webinar by Directors Institute. While the narrative framing and core proposition are clear, brand visual exposure fails to coincide with peak attention windows, and text density on shot 2 creates brief reading friction.",
+    "scores": {
+      "attention": {
+        "score": 84,
+        "label": "captures initial gaze",
+        "direction": "higher_better",
+        "basis": "measured",
+        "reason": null,
+        "signals": {
+          "hook_seconds": 3.0,
+          "mean_concentration": 0.4645,
+          "strongest_region_share": 0.3592
+        }
+      },
+      "focus": {
+        "score": 46,
+        "label": "attention on the key message",
+        "direction": "higher_better",
+        "basis": "measured_partial",
+        "reason": "key_message_not_on_screen",
+        "signals": {
+          "copy_attention_vs_chance": 1.92,
+          "mean_competing_peaks": 1.98
+        }
+      },
+      "cognitive_demand": {
+        "score": 21,
+        "label": "effort to understand - lower is better",
+        "direction": "lower_better",
+        "basis": "measured",
+        "reason": null,
+        "signals": {
+          "reading_speed_words_per_second": 4.0,
+          "overloaded_shots": 2,
+          "worst_overrun_ratio": 1.46,
+          "cut_rate_per_minute": 9.46
+        }
+      },
+      "clarity": {
+        "score": 81,
+        "label": "message + CTA are unambiguous",
+        "direction": "higher_better",
+        "basis": "hybrid",
+        "reason": null,
+        "signals": {
+          "llm_rating": "strong",
+          "llm_blend": 0.5,
+          "cta_seconds_on_screen": 1.37
+        }
+      },
+      "brand_memory": {
+        "score": 46,
+        "label": "likelihood brand is remembered",
+        "direction": "higher_better",
+        "basis": "measured",
+        "reason": null,
+        "signals": {
+          "first_appearance_seconds": 18.558,
+          "first_appearance_fraction": 0.225,
+          "exposure_seconds": 11.0,
+          "attention_peak_overlap": 0.0
+        }
+      },
+      "engagement": {
+        "score": 65,
+        "label": "pull to keep watching",
+        "direction": "higher_better",
+        "basis": "measured",
+        "reason": null,
+        "signals": {
+          "mean_engagement": 52.3,
+          "hook_strength": 57.2,
+          "dead_zone_seconds": 0,
+          "weak_zones": 0
+        }
+      }
+    },
+    "measurements": {
+      "frames": 120,
+      "duration_seconds": 82.48,
+      "shot_count": 13,
+      "cut_rate_per_minute": 9.46,
+      "ocr_operational_fraction": 1.0,
+      "frames_with_text_fraction": 1.0,
+      "mean_concentration": 0.398808,
+      "max_words_on_screen": 24,
+      "overloaded_shots": [
+        {
+          "shot": 2,
+          "words": 24,
+          "seconds_available": 4.12,
+          "seconds_needed": 6.0,
+          "t_start": 8.94,
+          "t_end": 12.37
+        },
+        {
+          "shot": 12,
+          "words": 8,
+          "seconds_available": 1.37,
+          "seconds_needed": 2.0,
+          "t_start": 81.11,
+          "t_end": 81.79
+        }
+      ],
+      "reading_speed_words_per_second": 4.0,
+      "brand": {
+        "detected": true,
+        "first_appearance_seconds": 18.558,
+        "first_appearance_fraction": 0.225,
+        "exposure_frames": 16,
+        "exposure_seconds": 11.0
+      },
+      "cta": {
+        "detected": true,
+        "weak": false
+      },
+      "prices_detected": false,
+      "faces_detected": true,
+      "sample_fps": 1.4549
+    },
+    "heatmap": {
+      "frame_time": 55.674,
+      "object_key": "vision-lab/07dc8103c9644e8fb44f6d6116571cf7/heat_55674.png",
+      "image_url": "https://aife-media-prod.s3.amazonaws.com/vision-lab/07dc8103c9644e8fb44f6d6116571cf7/heat_55674.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=REDACTED&X-Amz-Date=20260910T061032Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=SIGNED_AT_READ_TIME",
+      "peaks": [
+        {
+          "box": [
+            0.4047,
+            0.3281,
+            0.6141,
+            0.5042
+          ],
+          "share": 0.4155,
+          "rank": 1,
+          "element": "face",
+          "element_text": null
+        },
+        {
+          "box": [
+            0.225,
+            0.6646,
+            0.3937,
+            0.7531
+          ],
+          "share": 0.112,
+          "rank": 2,
+          "element": null,
+          "element_text": null
+        }
+      ]
+    },
+    "thumbnails": [
+      {
+        "t": 0.0,
+        "object_key": "vision-lab/07dc8103c9644e8fb44f6d6116571cf7/thumb_0.png",
+        "image_url": "https://aife-media-prod.s3.amazonaws.com/vision-lab/07dc8103c9644e8fb44f6d6116571cf7/thumb_0.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=REDACTED&X-Amz-Date=20260910T061032Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=SIGNED_AT_READ_TIME"
+      },
+      {
+        "t": 13.747,
+        "object_key": "vision-lab/07dc8103c9644e8fb44f6d6116571cf7/thumb_13747.png",
+        "image_url": "https://aife-media-prod.s3.amazonaws.com/vision-lab/07dc8103c9644e8fb44f6d6116571cf7/thumb_13747.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=REDACTED&X-Amz-Date=20260910T061032Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=SIGNED_AT_READ_TIME"
+      },
+      {
+        "t": 27.493,
+        "object_key": "vision-lab/07dc8103c9644e8fb44f6d6116571cf7/thumb_27493.png",
+        "image_url": "https://aife-media-prod.s3.amazonaws.com/vision-lab/07dc8103c9644e8fb44f6d6116571cf7/thumb_27493.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=REDACTED&X-Amz-Date=20260910T061032Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=SIGNED_AT_READ_TIME"
+      },
+      {
+        "t": 41.24,
+        "object_key": "vision-lab/07dc8103c9644e8fb44f6d6116571cf7/thumb_41240.png",
+        "image_url": "https://aife-media-prod.s3.amazonaws.com/vision-lab/07dc8103c9644e8fb44f6d6116571cf7/thumb_41240.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=REDACTED&X-Amz-Date=20260910T061032Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=SIGNED_AT_READ_TIME"
+      },
+      {
+        "t": 54.987,
+        "object_key": "vision-lab/07dc8103c9644e8fb44f6d6116571cf7/thumb_54987.png",
+        "image_url": "https://aife-media-prod.s3.amazonaws.com/vision-lab/07dc8103c9644e8fb44f6d6116571cf7/thumb_54987.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=REDACTED&X-Amz-Date=20260910T061032Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=SIGNED_AT_READ_TIME"
+      },
+      {
+        "t": 68.733,
+        "object_key": "vision-lab/07dc8103c9644e8fb44f6d6116571cf7/thumb_68733.png",
+        "image_url": "https://aife-media-prod.s3.amazonaws.com/vision-lab/07dc8103c9644e8fb44f6d6116571cf7/thumb_68733.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=REDACTED&X-Amz-Date=20260910T061032Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=SIGNED_AT_READ_TIME"
+      }
+    ],
+    "key_moments": [
+      {
+        "time": 0.0,
+        "label": "key",
+        "attention": 81.2,
+        "note": "on-screen copy takes the majority of gaze"
+      },
+      {
+        "time": 74.232,
+        "label": "peak",
+        "attention": 83.6,
+        "note": "strongest moment in the ad"
+      }
+    ],
+    "timeline": {
+      "unit": "index_0_100",
+      "basis": "derived_composite",
+      "basis_note": "A composite over six measured signals, not a model output. Saliency maps sum to 1 on every frame and cannot say whether a frame held the viewer.",
+      "points": [
+        {
+          "t": 0.0,
+          "attention": 81.2,
+          "engagement": 73.0
+        },
+        {
+          "t": 0.687,
+          "attention": 79.7,
+          "engagement": 73.9
+        },
+        {
+          "t": 1.375,
+          "attention": 73.8,
+          "engagement": 66.3
+        },
+        {
+          "t": 2.062,
+          "attention": 71.6,
+          "engagement": 59.1
+        },
+        {
+          "t": 2.749,
+          "attention": 74.7,
+          "engagement": 62.4
+        },
+        {
+          "t": 3.437,
+          "attention": 68.1,
+          "engagement": 52.9
+        },
+        {
+          "t": 4.124,
+          "attention": 55.8,
+          "engagement": 48.3
+        },
+        {
+          "t": 4.811,
+          "attention": 69.1,
+          "engagement": 68.9
+        },
+        {
+          "t": 5.499,
+          "attention": 62.4,
+          "engagement": 51.3
+        },
+        {
+          "t": 6.186,
+          "attention": 63.8,
+          "engagement": 49.2
+        },
+        {
+          "t": 6.873,
+          "attention": 54.5,
+          "engagement": 41.6
+        },
+        {
+          "t": 7.561,
+          "attention": 55.7,
+          "engagement": 39.9
+        },
+        {
+          "t": 8.248,
+          "attention": 54.3,
+          "engagement": 36.4
+        },
+        {
+          "t": 8.935,
+          "attention": 59.5,
+          "engagement": 60.4
+        },
+        {
+          "t": 9.623,
+          "attention": 60.7,
+          "engagement": 54.2
+        },
+        {
+          "t": 10.31,
+          "attention": 57.0,
+          "engagement": 46.8
+        },
+        {
+          "t": 10.997,
+          "attention": 53.0,
+          "engagement": 40.6
+        },
+        {
+          "t": 11.685,
+          "attention": 50.9,
+          "engagement": 38.1
+        },
+        {
+          "t": 12.372,
+          "attention": 46.8,
+          "engagement": 40.5
+        },
+        {
+          "t": 13.059,
+          "attention": 74.3,
+          "engagement": 67.4
+        },
+        {
+          "t": 13.747,
+          "attention": 74.3,
+          "engagement": 63.4
+        },
+        {
+          "t": 14.434,
+          "attention": 73.4,
+          "engagement": 61.7
+        },
+        {
+          "t": 15.121,
+          "attention": 73.2,
+          "engagement": 59.4
+        },
+        {
+          "t": 15.809,
+          "attention": 71.0,
+          "engagement": 57.2
+        },
+        {
+          "t": 16.496,
+          "attention": 66.7,
+          "engagement": 50.5
+        },
+        {
+          "t": 17.183,
+          "attention": 65.6,
+          "engagement": 49.6
+        },
+        {
+          "t": 17.871,
+          "attention": 69.5,
+          "engagement": 53.6
+        },
+        {
+          "t": 18.558,
+          "attention": 68.4,
+          "engagement": 69.7
+        },
+        {
+          "t": 19.245,
+          "attention": 67.9,
+          "engagement": 62.3
+        },
+        {
+          "t": 19.933,
+          "attention": 64.1,
+          "engagement": 54.4
+        },
+        {
+          "t": 20.62,
+          "attention": 60.8,
+          "engagement": 49.5
+        },
+        {
+          "t": 21.307,
+          "attention": 57.5,
+          "engagement": 44.3
+        },
+        {
+          "t": 21.995,
+          "attention": 53.9,
+          "engagement": 39.0
+        },
+        {
+          "t": 22.682,
+          "attention": 59.3,
+          "engagement": 51.2
+        },
+        {
+          "t": 23.369,
+          "attention": 45.1,
+          "engagement": 31.1
+        },
+        {
+          "t": 24.057,
+          "attention": 50.3,
+          "engagement": 34.1
+        },
+        {
+          "t": 24.744,
+          "attention": 50.2,
+          "engagement": 33.4
+        },
+        {
+          "t": 25.431,
+          "attention": 50.1,
+          "engagement": 33.4
+        },
+        {
+          "t": 26.119,
+          "attention": 46.0,
+          "engagement": 32.0
+        },
+        {
+          "t": 26.806,
+          "attention": 48.8,
+          "engagement": 33.6
+        },
+        {
+          "t": 27.493,
+          "attention": 48.1,
+          "engagement": 32.6
+        },
+        {
+          "t": 28.181,
+          "attention": 48.2,
+          "engagement": 32.7
+        },
+        {
+          "t": 28.868,
+          "attention": 57.5,
+          "engagement": 49.4
+        },
+        {
+          "t": 29.555,
+          "attention": 75.9,
+          "engagement": 68.8
+        },
+        {
+          "t": 30.243,
+          "attention": 76.4,
+          "engagement": 66.5
+        },
+        {
+          "t": 30.93,
+          "attention": 74.1,
+          "engagement": 62.2
+        },
+        {
+          "t": 31.617,
+          "attention": 72.0,
+          "engagement": 58.1
+        },
+        {
+          "t": 32.305,
+          "attention": 71.2,
+          "engagement": 57.8
+        },
+        {
+          "t": 32.992,
+          "attention": 63.9,
+          "engagement": 47.9
+        },
+        {
+          "t": 33.679,
+          "attention": 65.7,
+          "engagement": 48.6
+        },
+        {
+          "t": 34.367,
+          "attention": 66.8,
+          "engagement": 49.5
+        },
+        {
+          "t": 35.054,
+          "attention": 67.5,
+          "engagement": 50.5
+        },
+        {
+          "t": 35.741,
+          "attention": 69.5,
+          "engagement": 61.2
+        },
+        {
+          "t": 36.429,
+          "attention": 72.1,
+          "engagement": 71.7
+        },
+        {
+          "t": 37.116,
+          "attention": 68.7,
+          "engagement": 65.8
+        },
+        {
+          "t": 37.803,
+          "attention": 62.0,
+          "engagement": 55.3
+        },
+        {
+          "t": 38.491,
+          "attention": 60.7,
+          "engagement": 48.9
+        },
+        {
+          "t": 39.178,
+          "attention": 56.3,
+          "engagement": 51.6
+        },
+        {
+          "t": 39.865,
+          "attention": 69.6,
+          "engagement": 58.7
+        },
+        {
+          "t": 40.553,
+          "attention": 65.0,
+          "engagement": 53.2
+        },
+        {
+          "t": 41.24,
+          "attention": 56.2,
+          "engagement": 45.7
+        },
+        {
+          "t": 41.927,
+          "attention": 55.5,
+          "engagement": 43.6
+        },
+        {
+          "t": 42.615,
+          "attention": 54.6,
+          "engagement": 39.6
+        },
+        {
+          "t": 43.302,
+          "attention": 52.7,
+          "engagement": 36.8
+        },
+        {
+          "t": 43.989,
+          "attention": 51.0,
+          "engagement": 36.2
+        },
+        {
+          "t": 44.677,
+          "attention": 66.0,
+          "engagement": 67.1
+        },
+        {
+          "t": 45.364,
+          "attention": 62.6,
+          "engagement": 55.3
+        },
+        {
+          "t": 46.051,
+          "attention": 67.0,
+          "engagement": 63.8
+        },
+        {
+          "t": 46.739,
+          "attention": 62.4,
+          "engagement": 55.0
+        },
+        {
+          "t": 47.426,
+          "attention": 54.5,
+          "engagement": 42.2
+        },
+        {
+          "t": 48.113,
+          "attention": 51.7,
+          "engagement": 41.1
+        },
+        {
+          "t": 48.801,
+          "attention": 82.2,
+          "engagement": 80.8
+        },
+        {
+          "t": 49.488,
+          "attention": 80.3,
+          "engagement": 69.9
+        },
+        {
+          "t": 50.175,
+          "attention": 77.8,
+          "engagement": 67.0
+        },
+        {
+          "t": 50.863,
+          "attention": 74.6,
+          "engagement": 62.6
+        },
+        {
+          "t": 51.55,
+          "attention": 74.4,
+          "engagement": 59.3
+        },
+        {
+          "t": 52.237,
+          "attention": 70.0,
+          "engagement": 52.8
+        },
+        {
+          "t": 52.925,
+          "attention": 68.9,
+          "engagement": 52.7
+        },
+        {
+          "t": 53.612,
+          "attention": 70.7,
+          "engagement": 56.4
+        },
+        {
+          "t": 54.299,
+          "attention": 69.2,
+          "engagement": 52.8
+        },
+        {
+          "t": 54.987,
+          "attention": 68.5,
+          "engagement": 52.7
+        },
+        {
+          "t": 55.674,
+          "attention": 69.7,
+          "engagement": 53.1
+        },
+        {
+          "t": 56.361,
+          "attention": 71.2,
+          "engagement": 56.5
+        },
+        {
+          "t": 57.049,
+          "attention": 71.7,
+          "engagement": 54.4
+        },
+        {
+          "t": 57.736,
+          "attention": 70.3,
+          "engagement": 51.4
+        },
+        {
+          "t": 58.423,
+          "attention": 72.2,
+          "engagement": 63.2
+        },
+        {
+          "t": 59.111,
+          "attention": 70.0,
+          "engagement": 52.7
+        },
+        {
+          "t": 59.798,
+          "attention": 69.3,
+          "engagement": 53.2
+        },
+        {
+          "t": 60.485,
+          "attention": 72.7,
+          "engagement": 72.5
+        },
+        {
+          "t": 61.173,
+          "attention": 73.1,
+          "engagement": 64.4
+        },
+        {
+          "t": 61.86,
+          "attention": 72.4,
+          "engagement": 62.8
+        },
+        {
+          "t": 62.547,
+          "attention": 69.5,
+          "engagement": 58.5
+        },
+        {
+          "t": 63.235,
+          "attention": 67.6,
+          "engagement": 54.3
+        },
+        {
+          "t": 63.922,
+          "attention": 59.2,
+          "engagement": 53.0
+        },
+        {
+          "t": 64.609,
+          "attention": 55.8,
+          "engagement": 48.9
+        },
+        {
+          "t": 65.297,
+          "attention": 59.7,
+          "engagement": 51.9
+        },
+        {
+          "t": 65.984,
+          "attention": 57.7,
+          "engagement": 47.5
+        },
+        {
+          "t": 66.671,
+          "attention": 56.3,
+          "engagement": 46.4
+        },
+        {
+          "t": 67.359,
+          "attention": 58.6,
+          "engagement": 51.4
+        },
+        {
+          "t": 68.046,
+          "attention": 55.7,
+          "engagement": 40.6
+        },
+        {
+          "t": 68.733,
+          "attention": 52.8,
+          "engagement": 38.2
+        },
+        {
+          "t": 69.421,
+          "attention": 53.8,
+          "engagement": 40.5
+        },
+        {
+          "t": 70.108,
+          "attention": 58.0,
+          "engagement": 43.4
+        },
+        {
+          "t": 70.795,
+          "attention": 52.7,
+          "engagement": 39.6
+        },
+        {
+          "t": 71.483,
+          "attention": 54.6,
+          "engagement": 40.6
+        },
+        {
+          "t": 72.17,
+          "attention": 55.3,
+          "engagement": 39.6
+        },
+        {
+          "t": 72.857,
+          "attention": 56.8,
+          "engagement": 40.4
+        },
+        {
+          "t": 73.545,
+          "attention": 56.8,
+          "engagement": 40.3
+        },
+        {
+          "t": 74.232,
+          "attention": 83.6,
+          "engagement": 81.9
+        },
+        {
+          "t": 74.919,
+          "attention": 79.4,
+          "engagement": 69.8
+        },
+        {
+          "t": 75.607,
+          "attention": 78.0,
+          "engagement": 65.8
+        },
+        {
+          "t": 76.294,
+          "attention": 68.6,
+          "engagement": 56.7
+        },
+        {
+          "t": 76.981,
+          "attention": 70.9,
+          "engagement": 57.5
+        },
+        {
+          "t": 77.669,
+          "attention": 67.7,
+          "engagement": 54.5
+        },
+        {
+          "t": 78.356,
+          "attention": 63.9,
+          "engagement": 46.1
+        },
+        {
+          "t": 79.043,
+          "attention": 65.0,
+          "engagement": 47.3
+        },
+        {
+          "t": 79.731,
+          "attention": 64.6,
+          "engagement": 46.1
+        },
+        {
+          "t": 80.418,
+          "attention": 62.8,
+          "engagement": 53.4
+        },
+        {
+          "t": 81.105,
+          "attention": 60.6,
+          "engagement": 50.3
+        },
+        {
+          "t": 81.793,
+          "attention": 34.8,
+          "engagement": 29.8
+        }
+      ],
+      "weak_zones": [],
+      "markers": [],
+      "coefficients": "uniform_placeholder",
+      "calibration": "provisional_absolute",
+      "weak_zone_rule": {
+        "threshold": 35.0,
+        "min_seconds": 1.0,
+        "configured": false
+      }
+    },
+    "transcript": {
+      "available": true,
+      "reason": null,
+      "message": null,
+      "language": "en",
+      "stats": {
+        "lines": 27,
+        "words": 171,
+        "seconds_of_speech": 64.45,
+        "words_per_second": 2.65,
+        "mean_line_attention": 64.9,
+        "lines_in_weak_zones": 0
+      },
+      "segments": [
+        {
+          "t": 1.2,
+          "end": 2.34,
+          "text": "Aspiring directors,",
+          "attention": 73,
+          "in_weak_zone": false
+        },
+        {
+          "t": 2.88,
+          "end": 6.26,
+          "text": "did you know that next year over 1,300",
+          "attention": 64,
+          "in_weak_zone": false
+        },
+        {
+          "t": 6.4,
+          "end": 6.9,
+          "text": "independent",
+          "attention": 54,
+          "in_weak_zone": false
+        },
+        {
+          "t": 7.28,
+          "end": 8.26,
+          "text": "director positions",
+          "attention": 55,
+          "in_weak_zone": false
+        },
+        {
+          "t": 8.64,
+          "end": 9.46,
+          "text": "at NSE",
+          "attention": 60,
+          "in_weak_zone": false
+        },
+        {
+          "t": 9.76,
+          "end": 11.62,
+          "text": "listed companies are opening",
+          "attention": 55,
+          "in_weak_zone": false
+        },
+        {
+          "t": 12.4,
+          "end": 14.98,
+          "text": "up? That's an opportunity coming your way.",
+          "attention": 74,
+          "in_weak_zone": false
+        },
+        {
+          "t": 15.575,
+          "end": 17.915,
+          "text": "But that's not the only interesting part.",
+          "attention": 68,
+          "in_weak_zone": false
+        },
+        {
+          "t": 18.695,
+          "end": 22.235,
+          "text": "The age profile of India's boardrooms is changing too.",
+          "attention": 61,
+          "in_weak_zone": false
+        },
+        {
+          "t": 23.175,
+          "end": 28.47,
+          "text": "Directors aged 45 and below now account for 12% of board seats.",
+          "attention": 48,
+          "in_weak_zone": false
+        },
+        {
+          "t": 29.03,
+          "end": 31.61,
+          "text": "So boardrooms aren't just changing hands,",
+          "attention": 75,
+          "in_weak_zone": false
+        },
+        {
+          "t": 32.23,
+          "end": 35.37,
+          "text": "they are opening up to a broader generation of leadership.",
+          "attention": 67,
+          "in_weak_zone": false
+        },
+        {
+          "t": 36.39,
+          "end": 38.97,
+          "text": "As this new generation enters the boardroom,",
+          "attention": 66,
+          "in_weak_zone": false
+        },
+        {
+          "t": 39.35,
+          "end": 40.485,
+          "text": "the question is",
+          "attention": 70,
+          "in_weak_zone": false
+        },
+        {
+          "t": 41.285,
+          "end": 44.105,
+          "text": "will you become part of the next wave of directors",
+          "attention": 53,
+          "in_weak_zone": false
+        },
+        {
+          "t": 44.485,
+          "end": 45.465,
+          "text": "or watch others",
+          "attention": 64,
+          "in_weak_zone": false
+        },
+        {
+          "t": 45.845,
+          "end": 47.305,
+          "text": "step into those boardrooms?",
+          "attention": 65,
+          "in_weak_zone": false
+        },
+        {
+          "t": 48.565,
+          "end": 50.265,
+          "text": "If you want to take that step",
+          "attention": 80,
+          "in_weak_zone": false
+        },
+        {
+          "t": 50.565,
+          "end": 52.825,
+          "text": "you need to know what it takes to be considered",
+          "attention": 73,
+          "in_weak_zone": false
+        },
+        {
+          "t": 53.25,
+          "end": 57.99,
+          "text": "and succeed at the director's level. And that's exactly what you'll discover",
+          "attention": 70,
+          "in_weak_zone": false
+        },
+        {
+          "t": 58.37,
+          "end": 62.15,
+          "text": "in this exclusive webinar by World Development Corporation's",
+          "attention": 72,
+          "in_weak_zone": false
+        },
+        {
+          "t": 62.53,
+          "end": 63.51,
+          "text": "Directors Institute.",
+          "attention": 69,
+          "in_weak_zone": false
+        },
+        {
+          "t": 64.29,
+          "end": 66.95,
+          "text": "Having trained over 7,000 senior professionals,",
+          "attention": 57,
+          "in_weak_zone": false
+        },
+        {
+          "t": 67.665,
+          "end": 70.405,
+          "text": "World Development Corporation's Directors Institute",
+          "attention": 55,
+          "in_weak_zone": false
+        },
+        {
+          "t": 70.785,
+          "end": 73.605,
+          "text": "has been helping them turn their years of experience",
+          "attention": 55,
+          "in_weak_zone": false
+        },
+        {
+          "t": 73.985,
+          "end": 75.445,
+          "text": "into boardroom credentials.",
+          "attention": 82,
+          "in_weak_zone": false
+        },
+        {
+          "t": 76.305,
+          "end": 80.485,
+          "text": "Check the link below and reserve your spot before registrations fill up.",
+          "attention": 66,
+          "in_weak_zone": false
+        }
+      ]
+    },
+    "psychology": {
+      "triggers": [
+        {
+          "id": "halo_effect",
+          "number": 1,
+          "name": "The Halo Effect",
+          "subtitle": "The Power of First Impressions",
+          "status": "present",
+          "rating": "strong",
+          "polarity": "positive",
+          "detection": "hybrid",
+          "scored": true,
+          "reason": null,
+          "evidence": [],
+          "measured": {
+            "hook_attention": 76.2,
+            "rest_of_ad_attention": 63.3,
+            "hook_seconds": 3.0
+          },
+          "note": "the first 3s score 76 against 63 for the rest"
+        },
+        {
+          "id": "serial_position",
+          "number": 2,
+          "name": "The Serial Position Effect",
+          "subtitle": "First and Last Matter Most",
+          "status": "absent",
+          "rating": "weak",
+          "polarity": "positive",
+          "detection": "measured",
+          "scored": true,
+          "reason": null,
+          "evidence": [
+            {
+              "t": 0.0,
+              "quote": "Aspiring directors, did you know that next year over 1,300",
+              "source": "transcript"
+            },
+            {
+              "t": 79.5,
+              "quote": "Check the link below and reserve your spot before registrations fill up.",
+              "source": "transcript"
+            }
+          ],
+          "measured": {
+            "opening_close_similarity": 0.0,
+            "threshold": 0.25
+          },
+          "note": "the close reuses 0% of the opening's language"
+        },
+        {
+          "id": "recency",
+          "number": 3,
+          "name": "The Recency Effect",
+          "subtitle": "Recent Info Carries More Weight",
+          "status": "absent",
+          "rating": "absent",
+          "polarity": "positive",
+          "detection": "measured",
+          "scored": true,
+          "reason": null,
+          "evidence": [
+            {
+              "t": 79.5,
+              "quote": "Check the link below and reserve your spot before registrations fill up.",
+              "source": "transcript"
+            }
+          ],
+          "measured": {
+            "opening_close_similarity": 0.0
+          },
+          "note": "the close does not restate the promise the ad opened with"
+        },
+        {
+          "id": "mere_exposure",
+          "number": 4,
+          "name": "The Mere Exposure Effect",
+          "subtitle": "Familiarity Breeds Likability",
+          "status": "weak",
+          "rating": "weak",
+          "polarity": "positive",
+          "detection": "measured",
+          "scored": true,
+          "reason": null,
+          "evidence": [],
+          "measured": {
+            "exposure_seconds": 11.0,
+            "share_of_runtime": 0.133,
+            "first_appearance_seconds": 18.558
+          },
+          "note": "the brand is on screen for 11.0s, 13% of the runtime"
+        },
+        {
+          "id": "loss_aversion",
+          "number": 5,
+          "name": "Loss Aversion",
+          "subtitle": "The Fear of Missing Out",
+          "status": "weak",
+          "rating": "weak",
+          "polarity": "positive",
+          "detection": "hybrid",
+          "scored": true,
+          "reason": null,
+          "evidence": [
+            {
+              "t": 15.575,
+              "quote": "But that's not the only interesting part.",
+              "source": "transcript",
+              "matched": "only "
+            },
+            {
+              "t": 29.03,
+              "quote": "So boardrooms aren't just changing hands,",
+              "source": "transcript",
+              "matched": "just "
+            }
+          ],
+          "measured": {
+            "deadline_phrases": [],
+            "scarcity_phrases": [
+              "only ",
+              "just ",
+              "seats"
+            ]
+          },
+          "note": "scarcity language without a deadline"
+        },
+        {
+          "id": "compromise_effect",
+          "number": 6,
+          "name": "The Compromise Effect",
+          "subtitle": "How Offering 3 Choices Wins",
+          "status": "not_applicable",
+          "rating": null,
+          "polarity": "positive",
+          "detection": "measured",
+          "scored": true,
+          "reason": "no_options_presented",
+          "evidence": [],
+          "measured": {
+            "max_text_blocks_on_a_frame": 24
+          },
+          "note": "distinct option blocks cannot be separated from other on-screen text by OCR alone - deferred to the interpretation pass"
+        },
+        {
+          "id": "anchoring",
+          "number": 7,
+          "name": "Anchoring",
+          "subtitle": "Setting Expectations with Price",
+          "status": "not_applicable",
+          "rating": null,
+          "polarity": "positive",
+          "detection": "hybrid",
+          "scored": true,
+          "reason": "no_price_shown",
+          "evidence": [],
+          "measured": {},
+          "note": "no price appears on screen, so there is nothing to anchor"
+        },
+        {
+          "id": "choice_overload",
+          "number": 8,
+          "name": "Choice Overload",
+          "subtitle": "Less Is More for Better Decisions",
+          "status": "absent",
+          "rating": "absent",
+          "polarity": "defect",
+          "detection": "measured",
+          "scored": true,
+          "reason": null,
+          "evidence": [],
+          "measured": {
+            "distinct_ctas": [
+              "reserve"
+            ],
+            "mean_competing_peaks": 1.98
+          },
+          "note": "1 distinct calls to action and an average of 2.0 competing attention centres - overload is a defect, so PRESENT here is bad news"
+        },
+        {
+          "id": "framing_effect",
+          "number": 9,
+          "name": "The Framing Effect",
+          "subtitle": "Positioning Your Message",
+          "status": "present",
+          "rating": "strong",
+          "polarity": "positive",
+          "detection": "judged",
+          "scored": true,
+          "reason": null,
+          "evidence": [
+            {
+              "t": 23.175,
+              "quote": "Directors aged 45 and below now account for 12% of board seats."
+            },
+            {
+              "t": 41.285,
+              "quote": "will you become part of the next wave of directors"
+            },
+            {
+              "t": 45.845,
+              "quote": "step into those boardrooms?"
+            }
+          ],
+          "measured": {},
+          "note": "The creative frames career advancement around imminent market scarcity and an active generational shift, challenging the viewer to take action rather than remain a spectator.",
+          "judged_by": "llm"
+        },
+        {
+          "id": "ikea_effect",
+          "number": 10,
+          "name": "The IKEA Effect",
+          "subtitle": "Value Increases with Involvement",
+          "status": "absent",
+          "rating": "absent",
+          "polarity": "positive",
+          "detection": "judged",
+          "scored": true,
+          "reason": null,
+          "evidence": [],
+          "measured": {},
+          "note": "The ad invites passive consumption of an informative session rather than asking the viewer to co-create, customize, or build an asset during the pitch.",
+          "judged_by": "llm"
+        },
+        {
+          "id": "pygmalion_effect",
+          "number": 11,
+          "name": "The Pygmalion Effect",
+          "subtitle": "High Expectations Lead to Better Results",
+          "status": "present",
+          "rating": "adequate",
+          "polarity": "positive",
+          "detection": "judged",
+          "scored": true,
+          "reason": null,
+          "evidence": [
+            {
+              "t": 1.2,
+              "quote": "Aspiring directors,"
+            },
+            {
+              "t": 70.785,
+              "quote": "has been helping them turn their years of experience"
+            },
+            {
+              "t": 73.985,
+              "quote": "into boardroom credentials."
+            }
+          ],
+          "measured": {},
+          "note": "The script directly addresses the audience as future boardroom leaders, holding high expectations for their capability to transition into corporate directorship.",
+          "judged_by": "llm"
+        },
+        {
+          "id": "confirmation_bias",
+          "number": 12,
+          "name": "Confirmation Bias",
+          "subtitle": "Reinforcing Existing Beliefs",
+          "status": "not_applicable",
+          "rating": null,
+          "polarity": "positive",
+          "detection": "judged",
+          "scored": true,
+          "reason": "no_brand_brain",
+          "evidence": [],
+          "measured": {},
+          "note": "needs the brand's persona to judge against"
+        },
+        {
+          "id": "peltzman_effect",
+          "number": 13,
+          "name": "The Peltzman Effect",
+          "subtitle": "Lowering Perceived Risk",
+          "status": "absent",
+          "rating": "absent",
+          "polarity": "positive",
+          "detection": "hybrid",
+          "scored": true,
+          "reason": null,
+          "evidence": [],
+          "measured": {
+            "risk_reversal_phrases": []
+          },
+          "note": "no guarantee, trial or reversible commitment is offered"
+        },
+        {
+          "id": "bandwagon",
+          "number": 14,
+          "name": "The Bandwagon Effect",
+          "subtitle": "People Follow the Crowd",
+          "status": "present",
+          "rating": "strong",
+          "polarity": "positive",
+          "detection": "measured",
+          "scored": true,
+          "reason": null,
+          "evidence": [
+            {
+              "t": 2.88,
+              "quote": "did you know that next year over 1,300",
+              "source": "transcript",
+              "matched": "1,300"
+            },
+            {
+              "t": 64.29,
+              "quote": "Having trained over 7,000 senior professionals,",
+              "source": "transcript",
+              "matched": "7,000"
+            },
+            {
+              "t": 9.76,
+              "quote": "listed companies are opening",
+              "source": "transcript",
+              "matched": "companies"
+            },
+            {
+              "t": 1.2,
+              "quote": "Aspiring directors,",
+              "source": "transcript",
+              "matched": "directors"
+            }
+          ],
+          "measured": {
+            "adoption_numerals": [
+              "1,300",
+              "7,000",
+              "६७०",
+              "880७",
+              "६७०"
+            ],
+            "spelled_quantities": [],
+            "social_proof_phrases": [
+              "companies",
+              "directors",
+              "professionals"
+            ]
+          },
+          "note": "a specific adoption number is stated"
+        },
+        {
+          "id": "blind_spot_bias",
+          "number": 15,
+          "name": "Blind-Spot Bias",
+          "subtitle": "Biases That Go Unnoticed",
+          "status": "not_applicable",
+          "rating": null,
+          "polarity": "positive",
+          "detection": "judged",
+          "scored": false,
+          "reason": "report_level_observation_only",
+          "evidence": [],
+          "measured": {},
+          "note": "REPORT-LEVEL ONLY, deliberately unscored. This bias is a property of the marketer, not an artefact present in the frames. Scoring it would mean inventing a measurement, which breaks the rule the rest of this framework re"
+        }
+      ],
+      "coverage": {
+        "present": 4,
+        "weak": 2,
+        "absent": 5,
+        "not_applicable": 4,
+        "measured": 6
+      },
+      "version": "triggers_v1",
+      "affects_overall_score": false,
+      "unsupported": 0
+    },
+    "defects": [
+      {
+        "defect_id": "brand_never_attended",
+        "severity": "medium",
+        "t_start": null,
+        "t_end": null,
+        "scores_impacted": [
+          "brand_memory"
+        ],
+        "measured": {
+          "exposure_seconds": 11.0,
+          "attention_peak_overlap": 0.0,
+          "seconds": 11.0
+        },
+        "note": "the brand is on screen for 11.0s but only 0% of that overlaps a high-attention moment - exposure without memory"
+      },
+      {
+        "defect_id": "overloaded_slide",
+        "severity": "medium",
+        "t_start": 8.94,
+        "t_end": 12.37,
+        "scores_impacted": [
+          "cognitive_demand",
+          "focus"
+        ],
+        "measured": {
+          "words": 24,
+          "seconds_available": 4.12,
+          "seconds_needed": 6.0,
+          "seconds_short": 1.88,
+          "reading_speed_words_per_second": 4.0,
+          "seconds": 4.12
+        },
+        "note": "24 words need 6.0s at 4 words/second but are held for 4.1s - 1.9s short"
+      }
+    ],
+    "recommendations": [
+      {
+        "defect_id": "brand_never_attended",
+        "title": "Brand visual appears for 11.0s with 0% high-attention overlap",
+        "why": "The brand is visible for 11.0s across the 82.48s runtime, but none of that duration aligns with high-attention periods. When brand marks appear exclusively during attention troughs, prospective applicants retain the macro industry statistics without connecting them to Directors Institute.",
+        "fix": "Overlay the brand logo during the peak attention intervals at 48.565s and 73.985s, and maintain a static brand bug next to the closing call to action from 76.305s to the end.",
+        "anchor": {
+          "defect_id": "brand_never_attended",
+          "t_start": null,
+          "t_end": null,
+          "measured": {
+            "exposure_seconds": 11.0,
+            "attention_peak_overlap": 0.0,
+            "seconds": 11.0
+          }
+        },
+        "scores_impacted": [
+          "brand_memory"
+        ],
+        "severity": "medium",
+        "verified": true,
+        "rank": 1
+      },
+      {
+        "defect_id": "overloaded_slide",
+        "title": "Shot 2 shows 24 words for 4.12s - 1.88s short of readable time",
+        "why": "Between 8.94s and 12.37s, shot 2 displays 24 words. At the standard baseline of 4.0 words per second, this quantity of copy requires 6.0s to comprehend, leaving viewers 1.88s short and forcing them to choose between reading the text and listening to the speaker.",
+        "fix": "Reduce on-screen copy on shot 2 from 8.94s to 12.37s to a concise graphic card of no more than 16 words, highlighting only '1,300+ NSE Director Seats Opening'.",
+        "anchor": {
+          "defect_id": "overloaded_slide",
+          "t_start": 8.94,
+          "t_end": 12.37,
+          "measured": {
+            "words": 24,
+            "seconds_available": 4.12,
+            "seconds_needed": 6.0,
+            "seconds_short": 1.88,
+            "reading_speed_words_per_second": 4.0,
+            "seconds": 4.12
+          }
+        },
+        "scores_impacted": [
+          "cognitive_demand",
+          "focus"
+        ],
+        "severity": "medium",
+        "verified": true,
+        "rank": 2
+      }
+    ],
+    "key_message": {
+      "element": "Transforming professional seniority into qualified boardroom credentials via an exclusive masterclass",
+      "t": 70.785,
+      "quote": "has been helping them turn their years of experience",
+      "carrier": "voiceover",
+      "verified": true
+    },
+    "observations": [
+      "Text is present on 1.0 fraction of analyzed frames, meaning visual reading is required continuously throughout the entire creative.",
+      "Attention rebounds sharply at 73.985s when discussing concrete boardroom credentials, providing a natural bridge into the closing CTA."
+    ],
+    "interpretation": {
+      "available": true,
+      "reason": null,
+      "message": null,
+      "prompt_version": "vl_interpret_2026_09",
+      "evidence_audit": {
+        "checked": 9,
+        "dropped": 1,
+        "unsupported": [
+          {
+            "where": "trigger[mere_exposure]",
+            "reason": "no_evidence_cited",
+            "detail": "rated weak with nothing cited"
+          }
+        ]
+      },
+      "dropped_invented_recommendations": []
+    },
+    "notes": [
+      "no_brand_brain"
+    ],
+    "versions": {
+      "framework_version": "vision_v1",
+      "psychology_version": "triggers_v1",
+      "prompt_version": "vl_2026_09_d",
+      "interpret_prompt_version": "vl_interpret_2026_09",
+      "saliency_model": "UNISAL"
+    },
+    "config_disclosure": {
+      "weighting": "equal_unweighted_placeholder",
+      "rating_scale": "uniform_placeholder",
+      "bands": "thresholds_not_configured",
+      "weak_zone_rule": "placeholder",
+      "timeline_coefficients": "uniform_placeholder",
+      "calibration": "provisional_absolute",
+      "triggers_affect_overall_score": false,
+      "reading_speed_words_per_second": 4.0,
+      "unconfirmed": [
+        "metric weights",
+        "score bands / thresholds",
+        "weak-zone threshold",
+        "weak-zone minimum duration",
+        "timeline index coefficients",
+        "brand appearance targets",
+        "minimum creative duration",
+        "whether psychological triggers affect the overall score",
+        "trigger weights",
+        "whether triggers affect the overall score at all",
+        "rating scale for judged triggers"
+      ]
+    },
+    "created_at": "2026-09-10T06:09:38.243000",
+    "updated_at": "2026-09-10T06:10:30.672000"
+  }
+}

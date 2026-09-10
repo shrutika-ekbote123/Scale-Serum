@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Vision Lab — mark what should draw the eye</title>
+<style>
+  :root{
+    --ground:#11151c; --surface:#1a212b; --surface-2:#222b37; --line:#2f3a49;
+    --ink:#e8edf4; --ink-2:#a4b2c4; --ink-3:#77869a; --accent:#7f95ff;
+    --primary:#f0664a; --secondary:#e8b04a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+    font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+    display:grid;grid-template-columns:1fr 300px;height:100vh;overflow:hidden}
+
+  /* ---------- stage ---------- */
+  .stage{display:flex;flex-direction:column;min-width:0;padding:14px 14px 0}
+  .bar{display:flex;align-items:center;gap:14px;margin-bottom:10px;flex-wrap:wrap}
+  .bar h1{font-size:15px;margin:0;font-weight:600}
+  .count{font-variant-numeric:tabular-nums;color:var(--ink-2)}
+  .track{flex:1;min-width:120px;height:5px;background:var(--surface-2);border-radius:3px;overflow:hidden}
+  .track i{display:block;height:100%;background:var(--accent);width:0;transition:width .2s}
+  .canvaswrap{flex:1;position:relative;display:flex;align-items:center;
+    justify-content:center;min-height:0;padding-bottom:14px}
+  canvas{max-width:100%;max-height:100%;cursor:crosshair;
+    border:1px solid var(--line);border-radius:4px;background:#000}
+
+  /* ---------- panel ---------- */
+  .panel{background:var(--surface);border-left:1px solid var(--line);
+    padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:16px}
+  h2{font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--ink-3);margin:0 0 8px}
+  .kinds{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .kinds button{padding:8px 6px;font-size:12px;border-radius:4px;cursor:pointer;
+    background:var(--surface-2);color:var(--ink);border:1px solid var(--line);
+    text-align:left}
+  .kinds button.on{border-color:var(--accent);background:#232d4a;color:#fff}
+  .kinds button b{display:block;font-size:10px;color:var(--ink-3);font-weight:400}
+  .kinds button.on b{color:var(--accent)}
+
+  .imp{display:flex;gap:6px}
+  .imp button{flex:1;padding:8px;font-size:12px;border-radius:4px;cursor:pointer;
+    background:var(--surface-2);color:var(--ink);border:1px solid var(--line)}
+  .imp button.on{border-color:currentColor}
+  .imp button[data-v="primary"].on{color:var(--primary)}
+  .imp button[data-v="secondary"].on{color:var(--secondary)}
+
+  ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+  li{display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--surface-2);
+    border-radius:4px;font-size:12px}
+  li .sw{width:10px;height:10px;border-radius:2px;flex:none}
+  li span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  li button{background:none;border:0;color:var(--ink-3);cursor:pointer;font-size:15px;
+    line-height:1;padding:0 2px}
+  li button:hover{color:var(--primary)}
+  .empty{color:var(--ink-3);font-size:12px;font-style:italic}
+
+  .nav{display:flex;gap:8px}
+  .nav button{flex:1;padding:10px;border-radius:4px;cursor:pointer;font-size:13px;
+    background:var(--surface-2);color:var(--ink);border:1px solid var(--line)}
+  .nav button.go{background:var(--accent);border-color:var(--accent);color:#0d1117;font-weight:600}
+  .wide{width:100%;padding:10px;border-radius:4px;cursor:pointer;font-size:13px;
+    background:var(--surface-2);color:var(--ink);border:1px solid var(--line)}
+  .wide.save{background:#1f7a4d;border-color:#1f7a4d;color:#fff;font-weight:600}
+  kbd{background:var(--surface-2);border:1px solid var(--line);border-radius:3px;
+    padding:1px 5px;font-size:11px;font-family:ui-monospace,monospace}
+  .help{font-size:11.5px;color:var(--ink-3);line-height:1.7}
+  .note{font-size:11.5px;color:var(--ink-2);background:var(--surface-2);
+    padding:10px;border-radius:4px;border-left:2px solid var(--accent)}
+  .saved{font-size:11px;color:var(--ink-3);text-align:center}
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="bar">
+    <h1>What should draw the eye?</h1>
+    <span class="count" id="count">—</span>
+    <div class="track"><i id="track"></i></div>
+    <span class="count" id="marked">0 marked</span>
+  </div>
+  <div class="canvaswrap"><canvas id="c"></canvas></div>
+</div>
+
+<div class="panel">
+  <div class="note">
+    Drag a box around anything a viewer <em>should</em> look at. Mark what the ad
+    is trying to make them see — not what happens to be bright.
+  </div>
+
+  <div>
+    <h2>Element type</h2>
+    <div class="kinds" id="kinds"></div>
+  </div>
+
+  <div>
+    <h2>Importance</h2>
+    <div class="imp">
+      <button data-v="primary" class="on">Primary <kbd>1</kbd></button>
+      <button data-v="secondary">Secondary <kbd>2</kbd></button>
+    </div>
+  </div>
+
+  <div>
+    <h2>Marked on this frame</h2>
+    <ul id="list"></ul>
+  </div>
+
+  <div class="nav">
+    <button id="prev">‹ Prev</button>
+    <button id="skip">Nothing here</button>
+    <button id="next" class="go">Next ›</button>
+  </div>
+
+  <button class="wide save" id="download">Download annotations.json</button>
+  <div class="saved" id="saved">autosaved in this browser</div>
+
+  <div class="help">
+    <kbd>drag</kbd> draw a box · <kbd>1</kbd>/<kbd>2</kbd> importance<br>
+    <kbd>q w e r t y</kbd> element type<br>
+    <kbd>→</kbd> next · <kbd>←</kbd> back · <kbd>u</kbd> undo · <kbd>s</kbd> skip
+  </div>
+</div>
+
+<script>
+const KINDS = [
+  {id:"headline",  key:"q", label:"Headline",  hint:"the main claim"},
+  {id:"cta",       key:"w", label:"CTA",       hint:"button / the ask"},
+  {id:"product",   key:"e", label:"Product",   hint:"the thing sold"},
+  {id:"brand",     key:"r", label:"Brand",     hint:"logo / wordmark"},
+  {id:"face",      key:"t", label:"Face",      hint:"person"},
+  {id:"proof",     key:"y", label:"Proof",     hint:"stat / testimonial"},
+];
+const COLOURS = {headline:"#f0664a", cta:"#3fb6cf", product:"#e8b04a",
+                 brand:"#7f95ff", face:"#4ec97f", proof:"#c77dd8"};
+const STORE = "vl_bakeoff_annotations_v1";
+
+let frames = [], at = 0, kind = "headline", importance = "primary", seeded = 0;
+let data = {}, img = new Image(), drag = null;
+const c = document.getElementById("c"), ctx = c.getContext("2d");
+
+// ---------------------------------------------------------------- setup
+KINDS.forEach(k => {
+  const b = document.createElement("button");
+  b.innerHTML = `${k.label} <b>${k.hint} · ${k.key}</b>`;
+  b.dataset.id = k.id;
+  b.onclick = () => setKind(k.id);
+  document.getElementById("kinds").appendChild(b);
+});
+
+// Load the frame list, then any annotations.json already on disk. Seeded
+// boxes are loaded so a reviewer CORRECTS them rather than starting from a
+// blank frame - which is the whole point of pre-annotating. Anything already
+// in this browser's local storage wins, because that is unsaved newer work.
+Promise.all([
+  fetch("manifest.json").then(r => r.json()),
+  fetch("annotations.json").then(r => r.ok ? r.json() : null).catch(() => null),
+])
+  .then(([m, existing]) => {
+    frames = m.frames || [];
+    data = {};
+    if (existing && existing.frames) {
+      existing.frames.forEach(f => {
+        if ((f.regions && f.regions.length) || f.skipped) {
+          data[f.file] = {regions: f.regions || [], skipped: !!f.skipped,
+                          reviewed_by_human: !!f.reviewed_by_human};
+        }
+      });
+      seeded = Object.keys(data).length;
+    }
+    try {
+      const local = JSON.parse(localStorage.getItem(STORE) || "{}");
+      Object.assign(data, local);
+    } catch (e) { /* nothing stored */ }
+    if (!frames.length) { alert("manifest.json has no frames."); return; }
+    show(0);
+  })
+  .catch(() => {
+    document.querySelector(".canvaswrap").innerHTML =
+      "<p style='color:#f0664a;padding:30px;text-align:center'>Could not read " +
+      "manifest.json.<br><br>Open this page through the local server, not from " +
+      "the filesystem:<br><code>python scripts/bakeoff/extract_ad_frames.py --serve</code></p>";
+  });
+
+function setKind(id){
+  kind = id;
+  document.querySelectorAll("#kinds button")
+    .forEach(b => b.classList.toggle("on", b.dataset.id === id));
+}
+setKind("headline");
+
+document.querySelectorAll(".imp button").forEach(b => b.onclick = () => {
+  importance = b.dataset.v;
+  document.querySelectorAll(".imp button")
+    .forEach(x => x.classList.toggle("on", x === b));
+});
+
+// ---------------------------------------------------------------- frame
+function current(){ return frames[at]; }
+function regions(){
+  const f = current();
+  if (!data[f.file]) data[f.file] = {regions: [], skipped: false};
+  return data[f.file];
+}
+
+function show(index){
+  at = Math.max(0, Math.min(index, frames.length - 1));
+  const f = current();
+  img = new Image();
+  img.onload = () => { c.width = img.width; c.height = img.height; draw(); };
+  img.src = f.file;
+  document.getElementById("count").textContent =
+    `${at + 1} / ${frames.length} — ${f.source} @ ${f.t}s`;
+  document.getElementById("track").style.width =
+    `${((at + 1) / frames.length) * 100}%`;
+  renderList();
+  updateMarked();
+}
+
+function draw(){
+  ctx.drawImage(img, 0, 0);
+  regions().regions.forEach((r, i) => box(r, i));
+  if (drag) box({box: dragBox(), kind, importance}, null, true);
+}
+
+function box(r, i, ghost){
+  const [x0, y0, x1, y1] = r.box.map((v, k) => v * (k % 2 ? c.height : c.width));
+  ctx.save();
+  ctx.strokeStyle = COLOURS[r.kind] || "#fff";
+  ctx.lineWidth = r.importance === "primary" ? 3 : 2;
+  if (ghost) ctx.setLineDash([6, 4]);
+  else if (r.marked_by === "assistant") ctx.setLineDash([10, 5]);
+  ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+  ctx.fillStyle = (COLOURS[r.kind] || "#fff") + (r.importance === "primary" ? "33" : "1a");
+  ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+  if (i !== null && i !== undefined){
+    const label = `${i + 1} ${r.kind}`;
+    ctx.font = "600 13px system-ui";
+    const w = ctx.measureText(label).width + 10;
+    ctx.fillStyle = COLOURS[r.kind] || "#fff";
+    ctx.fillRect(x0, Math.max(0, y0 - 19), w, 19);
+    ctx.fillStyle = "#0d1117";
+    ctx.fillText(label, x0 + 5, Math.max(13, y0 - 5));
+  }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- drawing
+function at_(e){
+  const r = c.getBoundingClientRect();
+  return {x: (e.clientX - r.left) * (c.width / r.width),
+          y: (e.clientY - r.top) * (c.height / r.height)};
+}
+function dragBox(){
+  const {a, b} = drag;
+  return [Math.min(a.x, b.x) / c.width, Math.min(a.y, b.y) / c.height,
+          Math.max(a.x, b.x) / c.width, Math.max(a.y, b.y) / c.height]
+         .map(v => Math.round(Math.max(0, Math.min(1, v)) * 10000) / 10000);
+}
+c.addEventListener("mousedown", e => { const p = at_(e); drag = {a: p, b: p}; });
+c.addEventListener("mousemove", e => { if (drag){ drag.b = at_(e); draw(); } });
+window.addEventListener("mouseup", () => {
+  if (!drag) return;
+  const b = dragBox();
+  // A stray click is not a region. Anything under ~0.5% of the frame is noise.
+  if ((b[2] - b[0]) * (b[3] - b[1]) > 0.002){
+    regions().regions.push({box: b, kind, importance, marked_by: "human"});
+    regions().skipped = false;
+    touched();
+    persist();
+  }
+  drag = null;
+  draw(); renderList(); updateMarked();
+});
+
+// ---------------------------------------------------------------- list
+function touched(){
+  // Any edit by a person means this frame has now been reviewed. That flag is
+  // what lets evaluate.py report human-checked frames separately from seeded
+  // ones, so a pre-annotation can never quietly pass as ground truth.
+  regions().reviewed_by_human = true;
+}
+
+function renderList(){
+  const ul = document.getElementById("list");
+  const rs = regions().regions;
+  ul.innerHTML = "";
+  if (!rs.length){
+    ul.innerHTML = `<li class="empty">${regions().skipped
+      ? "marked as nothing to annotate" : "nothing marked yet"}</li>`;
+    return;
+  }
+  rs.forEach((r, i) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<i class="sw" style="background:${COLOURS[r.kind]}"></i>
+      <span>${i + 1}. ${r.kind} · ${r.importance}${
+        r.marked_by === "assistant" ? " · unreviewed" : ""}</span>
+      <button title="remove">×</button>`;
+    li.querySelector("button").onclick = () => {
+      rs.splice(i, 1); touched(); persist(); draw(); renderList(); updateMarked();
+    };
+    ul.appendChild(li);
+  });
+}
+
+function updateMarked(){
+  const done = Object.values(data)
+    .filter(d => (d.regions && d.regions.length) || d.skipped).length;
+  const reviewed = Object.values(data).filter(d => d.reviewed_by_human).length;
+  document.getElementById("marked").textContent =
+    `${done} marked · ${reviewed} reviewed`;
+}
+
+function persist(){
+  try {
+    localStorage.setItem(STORE, JSON.stringify(data));
+    document.getElementById("saved").textContent =
+      "autosaved " + new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById("saved").textContent =
+      "could not autosave — download often";
+  }
+}
+
+// ---------------------------------------------------------------- nav
+document.getElementById("next").onclick = () => show(at + 1);
+document.getElementById("prev").onclick = () => show(at - 1);
+document.getElementById("skip").onclick = () => {
+  regions().skipped = true; regions().regions = []; touched();
+  persist(); renderList(); updateMarked(); show(at + 1);
+};
+
+document.getElementById("download").onclick = () => {
+  const out = {
+    version: 1,
+    created: new Date().toISOString(),
+    note: "Hand-marked regions a viewer SHOULD look at. Boxes are fractional " +
+          "(0-1) so they are resolution independent. Primary regions weigh " +
+          "double secondary ones when the ground-truth map is built.",
+    frames: frames.map(f => ({
+      file: f.file, source: f.source, t: f.t,
+      width: f.width, height: f.height,
+      regions: (data[f.file] || {}).regions || [],
+      skipped: !!(data[f.file] || {}).skipped,
+      reviewed_by_human: !!(data[f.file] || {}).reviewed_by_human,
+      annotated: !!((data[f.file] || {}).regions || []).length,
+    })),
+  };
+  const blob = new Blob([JSON.stringify(out, null, 2)], {type: "application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "annotations.json";
+  a.click();
+};
+
+window.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  const k = KINDS.find(x => x.key === e.key.toLowerCase());
+  if (k) return setKind(k.id);
+  if (e.key === "1" || e.key === "2"){
+    document.querySelector(`.imp button[data-v="${e.key === "1" ? "primary" : "secondary"}"]`).click();
+  }
+  if (e.key === "ArrowRight") show(at + 1);
+  if (e.key === "ArrowLeft") show(at - 1);
+  if (e.key.toLowerCase() === "s") document.getElementById("skip").click();
+  if (e.key.toLowerCase() === "u"){
+    regions().regions.pop(); persist(); draw(); renderList(); updateMarked();
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+{
+  "request": "GET /api/vision-lab/analysis/{id}",
+  "status_code": 200,
+  "response": {
+    "analysis_id": "07dc8103c9644e8fb44f6d6116571cf7",
+    "creative_id": "cre_demo_1789020575",
+    "ad_number": "042",
+    "division": "directors_institute",
+    "status": "queued",
+    "availability": {
+      "available": true,
+      "reason": null,
+      "message": null
+    },
+    "reason": null,
+    "message": null,
+    "media": null,
+    "scores": null,
+    "created_at": "2026-09-10T06:09:38.243000",
+    "updated_at": "2026-09-10T06:09:38.243000",
+    "attempts": 0,
+    "poll_url": "/api/vision-lab/analysis/07dc8103c9644e8fb44f6d6116571cf7",
+    "suggested_poll_interval_seconds": 5,
+    "fallback": false
+  }
+}

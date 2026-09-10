@@ -45,3 +45,19 @@ Thumbs.db
 
 # Test recordings — real customer audio, never commit
 testaudio/
+
+# Test creatives. Video belongs in S3, never in git - these four are ~600 MB and
+# a commit of them cannot be cleanly undone once pushed. Upload them with
+# scripts/upload_test_ads.py and reference them by URL.
+Ads_Video/
+*.mp4
+*.mov
+*.webm
+
+# Saliency bake-off (Step 8). Model clones, weights and eye-tracking datasets -
+# several GB, all fetched from upstream. The code is tracked; the workspace is not.
+scripts/bakeoff/workspace/
+
+# Saliency model weights. ~12 MB of binary, provisioned to the server as a
+# deploy artefact rather than committed - see VISION_LAB_PLAN.md.
+.models/

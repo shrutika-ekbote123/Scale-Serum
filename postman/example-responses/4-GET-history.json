@@ -1,0 +1,36 @@
+{
+  "request": "GET /api/vision-lab/history?ad_number=042&limit=3",
+  "status_code": 200,
+  "response": {
+    "items": [
+      {
+        "analysis_id": "07dc8103c9644e8fb44f6d6116571cf7",
+        "creative_id": "cre_demo_1789020575",
+        "ad_number": "042",
+        "division": "directors_institute",
+        "status": "completed",
+        "overall_score": 67,
+        "created_at": "2026-09-10T06:09:38.243000"
+      },
+      {
+        "analysis_id": "252df957b0ad424c90c86fd7bd6b940b",
+        "creative_id": "cre_ads1_postman",
+        "ad_number": "042",
+        "division": "directors_institute",
+        "status": "failed",
+        "overall_score": null,
+        "created_at": "2026-09-10T03:48:42.245000"
+      },
+      {
+        "analysis_id": "d4731c58cc584a278d5708f53f23a62a",
+        "creative_id": "cre_ads1_postman",
+        "ad_number": "042",
+        "division": "directors_institute",
+        "status": "failed",
+        "overall_score": null,
+        "created_at": "2026-09-10T03:47:49.745000"
+      }
+    ],
+    "count": 3
+  }
+}
