@@ -91,6 +91,10 @@ class AnalyzeAccepted(BaseModel):
     poll_url: Optional[str] = None
     suggested_poll_interval_seconds: int = 5
     idempotent_hit: bool = False
+    # A signed preview of the creative, valid 1 hour. Present only when the
+    # analysis already exists and is completed - i.e. an idempotent hit. null for
+    # a new submission: nothing has been downloaded yet, so there is no frame.
+    thumbnail_url: Optional[str] = None
     availability: Availability = Field(default_factory=Availability)
     reason: Optional[str] = None
     message: Optional[str] = None

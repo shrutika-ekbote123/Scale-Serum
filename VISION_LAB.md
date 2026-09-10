@@ -331,11 +331,32 @@ result.
   "poll_url": "/api/vision-lab/analysis/2a1178aea026451b93450daf80b44f7b",
   "suggested_poll_interval_seconds": 5,
   "idempotent_hit": false,
+  "thumbnail_url": null,
   "availability": { "available": true, "reason": null, "message": null },
   "reason": null,
   "message": null
 }
 ```
+
+`thumbnail_url` is **`null` for a new submission** — nothing has been downloaded yet, so
+there is no frame to show. When you resubmit a creative that is **already analysed**, you get
+the existing analysis back (`idempotent_hit: true`) and, once it has completed, a signed link
+to a plain frame of the ad, valid for **1 hour**:
+
+```json
+{
+  "analysis_id": "284efbfbd52f4398a65779b7b30907c9",
+  "creative_id": "cre_ads1_postman",
+  "status": "completed",
+  "idempotent_hit": true,
+  "thumbnail_url": "https://aife-media-prod.s3.amazonaws.com/vision-lab/284efbfb…/poster_55674.png?X-Amz-Signature=…",
+  "…": "the rest as above"
+}
+```
+
+The image is the report's **poster** — the heatmap's frame without the overlay, which is chosen
+to skip black openings and fades ([§9](#9-complete-field-reference)). Analyses made before
+posters existed return the strip frame nearest that moment instead.
 
 **Response — refused** (still `200`; a failed analysis row is recorded so the refusal is
 auditable)
@@ -364,7 +385,7 @@ same `size_bytes` and `ad_number`, and the same model and framework versions.
 |---|---|
 | `completed` | returns it (`idempotent_hit: true`) |
 | still running | returns it — no second job is started |
-| running but stalled > 30 min | starts a new one |
+| started, but its worker went quiet > 30 min | starts a new one |
 | `failed` | **starts a new one** — resubmitting is how you retry |
 | any, with `force_reanalysis: true` | starts a new one |
 
@@ -506,6 +527,7 @@ The History tab. Newest first.
       "division": "directors_institute",
       "status": "completed",
       "overall_score": 62,
+      "thumbnail_url": "https://aife-media-prod.s3.amazonaws.com/vision-lab/2a1178ae…/poster_55674.png?X-Amz-Signature=…",
       "created_at": "2026-09-10T06:06:33.732000"
     },
     {
@@ -515,6 +537,7 @@ The History tab. Newest first.
       "division": "directors_institute",
       "status": "failed",
       "overall_score": null,
+      "thumbnail_url": null,
       "created_at": "2026-09-10T03:48:42.245000"
     }
   ],
@@ -522,7 +545,7 @@ The History tab. Newest first.
 }
 ```
 
-`overall_score` is `null` for anything not completed. Failed analyses are included — hide or
+`overall_score` and `thumbnail_url` are `null` for anything not completed. `thumbnail_url` is a signed plain frame of the ad, valid 1 hour — enough to draw a History list with previews without fetching every report. Failed analyses are included — hide or
 grey them as you see fit.
 
 ---
@@ -570,6 +593,7 @@ Removes the analysis, its stored measurements and its heatmap/thumbnail images.
   "enabled": true,
   "storage": "configured",
   "worker": { "seen_seconds_ago": 3.2, "healthy": true, "in_flight": 1 },
+  "queue": { "queued": 3, "oldest_waiting_seconds": 142.0 },
   "model": "configured",
   "framework_version": "vision_v1",
   "transcription": "configured",
@@ -583,11 +607,14 @@ Removes the analysis, its stored measurements and its heatmap/thumbnail images.
 | `enabled` | `VL_ENABLED` is true |
 | `storage` | MongoDB is configured |
 | `worker.healthy` | `true` — a job in flight has a recent heartbeat. `false` — a job is in flight and the worker has gone quiet. **`null` — nothing in flight, so unknown, not broken** |
-| `worker.in_flight` | Jobs currently being processed |
+| `worker.in_flight` | Jobs a worker is processing right now. **Queued jobs are not counted** |
+| `worker.reason` | `jobs_waiting_unclaimed` — jobs have waited over a minute and none is being processed: **no worker is running**. A running worker that is idle picks a job up within seconds |
+| `queue.queued` | Jobs waiting for a worker |
+| `queue.oldest_waiting_seconds` | How long the oldest has waited — your backlog, in seconds |
 | `model` | A saliency model is configured |
 | `transcription` / `interpretation` | Deepgram / Gemini keys present. `"not_configured"` means reports will come back without a transcript / without written guidance — **not** that the ad had nothing wrong with it |
 
-Worth a monitor: `in_flight > 0` with `healthy: false` means the worker died mid-job.
+Worth a monitor: `healthy: false`. With `in_flight > 0` the worker died mid-job; with `reason: jobs_waiting_unclaimed` no worker is running at all. A large `oldest_waiting_seconds` with a healthy worker is not a failure — it is load, and the fix is more workers (§13, #11).
 
 ---
 
@@ -613,8 +640,10 @@ polls, and a silent video has nothing to transcribe.
 1. Wait `suggested_poll_interval_seconds` (currently **5**) between polls.
 2. Stop on `completed`, `failed` or `skipped`.
 3. While running, `scores` is `null` — render progress, not numbers.
-4. A job whose worker stops reporting for **30 minutes** is marked `failed` with
-   `reason: processing_interrupted` — usually a server restart mid-job. Resubmit to retry.
+4. A job a worker has **started** and then stops reporting on for **30 minutes** is marked
+   `failed` with `reason: processing_interrupted` — usually a server restart mid-job.
+   Resubmit to retry. **A job still waiting in the queue is never failed for waiting**,
+   however long the queue: it stays `queued` and is analysed when its turn comes.
 5. Give up client-side after ~10 minutes and show a "still working, check back" state; the
    analysis continues regardless.
 
@@ -738,6 +767,7 @@ bands are set.
 | Attention Report image | `heatmap.image_url` (the frame is at `heatmap.frame_time` seconds) |
 | Numbered hotspots ①②③ | `heatmap.peaks[]` → `rank`, `box`, `share`, `element`, `element_text` |
 | Frame strip | `thumbnails[]` → `t`, `image_url` |
+| Preview image (History list, upload card) | `thumbnail_url` on `/history` and `/analyze`, or `poster.image_url` in the report |
 | Score out of 100 | `overall.score` |
 | Guidance paragraph | `summary` |
 | Six metric bars | `scores.attention`, `.focus`, `.cognitive_demand`, `.clarity`, `.brand_memory`, `.engagement` → `score`, `label`, `direction` |
@@ -796,6 +826,7 @@ may be `null`, with a reason alongside.
 | `scores` | object | The six metrics |
 | `measurements` | object | Raw counts behind the scores |
 | `heatmap`, `thumbnails` | object, array | The Attention Report images |
+| `poster` | object | A plain frame of the ad for previews — `{frame_time, object_key, image_url}` |
 | `key_moments` | array | Peak / hero / key / weak |
 | `timeline` | object | The attention-over-time curve. **`null` for an image** |
 | `transcript` | object | Time-stamped lines, or why there are none |
@@ -911,6 +942,7 @@ Raw counts: `frames`, `duration_seconds`, `shot_count`, `cut_rate_per_minute`,
   (text, CTA) or the brand name.
 - `image_url` is `null` if S3 is not configured — the report still carries `peaks`.
 - `thumbnails`: up to 6 frames across the ad.
+- `poster`: the heatmap's frame **without** the overlay — the image `thumbnail_url` points to. Signed on every read like the rest. `object_key` is `null` for analyses made before posters existed, and for a server without S3.
 
 ### `key_moments[]`
 
@@ -1220,7 +1252,8 @@ endpoint returns them. Those two cases are HTTP errors instead: an unknown id is
 | Formats | `.mp4 .mov .webm .m4v .jpg .jpeg .png .webp` | — |
 | On-screen text languages | English, Hindi | `VL_OCR_LANGUAGES` |
 | Jobs processed at once | 1 | `VL_MAX_CONCURRENT_JOBS` |
-| Stalled job reported after | 30 min | `VL_JOB_STALE_SECONDS` |
+| A started job reported stalled after | 30 min — never applies to a waiting job | `VL_JOB_STALE_SECONDS` |
+| No worker running flagged in `/health` after | 60 s of jobs waiting unclaimed | `VL_QUEUE_UNCLAIMED_ALERT_SECONDS` |
 | Measurements kept (for rescore) | 180 days | `VL_MEASUREMENTS_TTL_DAYS` |
 | Image link validity | 1 hour, re-signed on every GET | `AWS_S3_URL_TTL_SECONDS` |
 | Upload link validity | 6 hours | `VL_UPLOAD_URL_TTL_SECONDS` |
@@ -1273,7 +1306,7 @@ runs in the worker process.
 | 8 | Brand detection needs `brand_names` or a wordmark | Brand Memory is null without them | Always send `brand_names` |
 | 9 | OCR reads English and Hindi only; heavily stylised type may be misread | Word counts can undercount | — |
 | 10 | Gemini's wording and ratings vary between runs | Two separate analyses of the same ad can differ slightly in Clarity and prose | Identical resubmissions return the stored result; rescoring reuses the stored rating |
-| 11 | One job at a time, CPU only | A queue of N ads takes roughly N × 60 s | Raise `VL_MAX_CONCURRENT_JOBS` only on a bigger box |
+| 11 | One job at a time per worker, CPU only | A queue of N ads takes roughly N × 60 s | **Run more worker processes** — they share the MongoDB queue safely, and no job is ever taken twice. Raising `VL_MAX_CONCURRENT_JOBS` barely helps: inside one process the CPU-heavy steps run one after another |
 | 12 | `DELETE` does not remove files sent to `/upload` | They accumulate in `vision-lab-uploads/` | A bucket lifecycle rule |
 | 13 | No upload progress from Vision Lab | — | The browser → S3 PUT carries the progress bar |
 | 14 | Model licence for commercial use not yet signed off | Blocks customer-facing launch | Legal review — see §3.6 |

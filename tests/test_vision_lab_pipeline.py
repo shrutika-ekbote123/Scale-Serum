@@ -83,6 +83,9 @@ class FakeCollection:
         return FakeCursor([copy.deepcopy(d) for d in self.docs.values()
                            if self._matches(d, query)])
 
+    async def count_documents(self, query):
+        return sum(1 for d in self.docs.values() if self._matches(d, query))
+
     async def insert_one(self, doc):
         self.docs[doc["_id"]] = copy.deepcopy(doc)
 
