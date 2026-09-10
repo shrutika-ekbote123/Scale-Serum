@@ -1,0 +1,417 @@
+{
+  "psychology_version": "triggers_v1",
+  "basis": "The 15 psychological marketing triggers supplied by ScaleSerum management. Definitions are transcribed from that source; the detection rules are ours and are stated per trigger so a reader can see which findings are counted and which are judged.",
+  "unconfirmed_business_values": [
+    "trigger weights",
+    "whether triggers affect the overall score at all",
+    "rating scale for judged triggers"
+  ],
+  "how_to_configure": "Weights are null because management has not decided whether the psychology layer scores a creative or only audits it. Until then triggers are reported alongside the six metrics and contribute nothing to the overall score.",
+  "affects_overall_score": false,
+  "affects_overall_score_note": "false is the neutral default, not a decision. Set true and supply weights to make triggers part of the scorecard.",
+  "rating_levels": [
+    "absent",
+    "weak",
+    "adequate",
+    "strong"
+  ],
+  "detection_modes": {
+    "measured": "Detected by counting something in the transcript, the OCR output or the timeline. No LLM involvement.",
+    "judged": "Rated by the LLM against the definition, with evidence that is then verified against the transcript and OCR.",
+    "hybrid": "A measured signal decides applicability or presence; the LLM judges quality."
+  },
+  "not_applicable_policy": {
+    "mode": "exclude",
+    "confirmed": false,
+    "options": [
+      "exclude",
+      "zero"
+    ],
+    "note": "What to do with a trigger the creative gave no opportunity for - Anchoring with no price on screen, Compromise with no options presented. 'exclude' drops it; 'zero' scores it 0. 'exclude' is the neutral default because marking a creative down for not showing a price it was never meant to show is an artefact, not a finding."
+  },
+  "triggers": [
+    {
+      "id": "halo_effect",
+      "number": 1,
+      "name": "The Halo Effect",
+      "subtitle": "The Power of First Impressions",
+      "definition": "A strong positive first impression colours everything the viewer sees afterwards. In a video ad the first seconds set the frame through which the rest of the creative is judged.",
+      "detection": "hybrid",
+      "measured_signals": [
+        "hook_attention_index",
+        "hook_production_quality_proxy"
+      ],
+      "where_it_should_land": [
+        "hook"
+      ],
+      "applies_when": {
+        "requires": []
+      },
+      "weight": null
+    },
+    {
+      "id": "serial_position",
+      "number": 2,
+      "name": "The Serial Position Effect",
+      "subtitle": "First and Last Matter Most",
+      "definition": "People remember the beginning and the end of a sequence better than the middle. The core claim therefore belongs in the opening and the close, not buried mid-roll.",
+      "detection": "measured",
+      "measured_signals": [
+        "core_claim_in_first_3s",
+        "core_claim_in_last_3s"
+      ],
+      "where_it_should_land": [
+        "hook",
+        "close"
+      ],
+      "applies_when": {
+        "requires": [
+          "transcript_or_ocr"
+        ]
+      },
+      "weight": null
+    },
+    {
+      "id": "recency",
+      "number": 3,
+      "name": "The Recency Effect",
+      "subtitle": "Recent Info Carries More Weight",
+      "definition": "The last thing said carries disproportionate weight in the decision that follows. A close that does not restate the promise leaves the viewer holding the CTA without the reason for it.",
+      "detection": "measured",
+      "measured_signals": [
+        "opening_close_similarity"
+      ],
+      "where_it_should_land": [
+        "close"
+      ],
+      "applies_when": {
+        "requires": [
+          "transcript_or_ocr"
+        ]
+      },
+      "weight": null
+    },
+    {
+      "id": "mere_exposure",
+      "number": 4,
+      "name": "The Mere Exposure Effect",
+      "subtitle": "Familiarity Breeds Likability",
+      "definition": "Repeated exposure to a brand increases liking, independently of any argument made. Exposure has to be seen, not merely present on screen.",
+      "detection": "measured",
+      "measured_signals": [
+        "brand_exposure_count",
+        "brand_exposure_seconds",
+        "brand_peak_overlap"
+      ],
+      "where_it_should_land": [
+        "hook",
+        "body",
+        "close"
+      ],
+      "applies_when": {
+        "requires": [
+          "brand_detected"
+        ]
+      },
+      "not_applicable_reason": "no_brand_detected",
+      "weight": null,
+      "shares_signal_with": "brand_memory"
+    },
+    {
+      "id": "loss_aversion",
+      "number": 5,
+      "name": "Loss Aversion",
+      "subtitle": "The Fear of Missing Out",
+      "definition": "A potential loss motivates more strongly than an equivalent gain. Deadlines, closing cohorts and limited places work on this.",
+      "detection": "hybrid",
+      "measured_signals": [
+        "deadline_phrase",
+        "scarcity_numeral"
+      ],
+      "where_it_should_land": [
+        "close"
+      ],
+      "applies_when": {
+        "requires": []
+      },
+      "weight": null
+    },
+    {
+      "id": "compromise_effect",
+      "number": 6,
+      "name": "The Compromise Effect",
+      "subtitle": "How Offering 3 Choices Wins",
+      "definition": "Given three options, people disproportionately choose the middle one. A creative presenting exactly three tiers is using this; one presenting two or seven is not.",
+      "detection": "measured",
+      "measured_signals": [
+        "option_block_count"
+      ],
+      "where_it_should_land": [
+        "body"
+      ],
+      "applies_when": {
+        "requires": [
+          "options_presented"
+        ]
+      },
+      "not_applicable_reason": "no_options_presented",
+      "weight": null
+    },
+    {
+      "id": "anchoring",
+      "number": 7,
+      "name": "Anchoring",
+      "subtitle": "Setting Expectations with Price",
+      "definition": "The first number a viewer sees frames every number after it. A price shown without an anchor before it is evaluated against nothing.",
+      "detection": "hybrid",
+      "measured_signals": [
+        "price_detected",
+        "anchor_precedes_price"
+      ],
+      "where_it_should_land": [
+        "body"
+      ],
+      "applies_when": {
+        "requires": [
+          "price_shown"
+        ]
+      },
+      "not_applicable_reason": "no_price_shown",
+      "weight": null
+    },
+    {
+      "id": "choice_overload",
+      "number": 8,
+      "polarity": "defect",
+      "polarity_note": "The only trigger where exhibiting it strongly is bad news. Reported so a scorecard does not read 'present' as a win.",
+      "name": "Choice Overload",
+      "subtitle": "Less Is More for Better Decisions",
+      "definition": "Too many options or too many competing asks reduce the chance of any decision at all. In a video this shows up as multiple CTAs, or a frame asking the eye to do several things at once.",
+      "detection": "measured",
+      "measured_signals": [
+        "distinct_cta_count",
+        "option_block_count",
+        "competing_peaks"
+      ],
+      "where_it_should_land": [
+        "close"
+      ],
+      "applies_when": {
+        "requires": []
+      },
+      "weight": null,
+      "shares_signal_with": "cognitive_demand"
+    },
+    {
+      "id": "framing_effect",
+      "number": 9,
+      "name": "The Framing Effect",
+      "subtitle": "Positioning Your Message",
+      "definition": "The same fact persuades differently depending on whether it is framed as a gain or a loss. Judged against the persona's own stakes, not in the abstract.",
+      "detection": "judged",
+      "measured_signals": [],
+      "where_it_should_land": [
+        "hook",
+        "body"
+      ],
+      "applies_when": {
+        "requires": []
+      },
+      "weight": null
+    },
+    {
+      "id": "ikea_effect",
+      "number": 10,
+      "name": "The IKEA Effect",
+      "subtitle": "Value Increases with Involvement",
+      "definition": "People value what they helped build. A creative that invites participation - an assessment, a quiz, an application - creates more attachment than one that asks only for consumption.",
+      "detection": "judged",
+      "measured_signals": [],
+      "where_it_should_land": [
+        "close"
+      ],
+      "applies_when": {
+        "requires": []
+      },
+      "weight": null
+    },
+    {
+      "id": "pygmalion_effect",
+      "number": 11,
+      "name": "The Pygmalion Effect",
+      "subtitle": "High Expectations Lead to Better Results",
+      "definition": "People rise to the expectations placed on them. A creative that addresses the viewer as already capable of the outcome performs differently from one that addresses them as deficient.",
+      "detection": "judged",
+      "measured_signals": [],
+      "where_it_should_land": [
+        "hook",
+        "body"
+      ],
+      "applies_when": {
+        "requires": []
+      },
+      "weight": null
+    },
+    {
+      "id": "confirmation_bias",
+      "number": 12,
+      "name": "Confirmation Bias",
+      "subtitle": "Reinforcing Existing Beliefs",
+      "definition": "People accept most readily what agrees with what they already believe. Opening from a belief the persona already holds lowers resistance to everything that follows.",
+      "detection": "judged",
+      "measured_signals": [],
+      "where_it_should_land": [
+        "hook"
+      ],
+      "applies_when": {
+        "requires": [
+          "brand_brain"
+        ]
+      },
+      "not_applicable_reason": "no_brand_brain",
+      "weight": null
+    },
+    {
+      "id": "peltzman_effect",
+      "number": 13,
+      "name": "The Peltzman Effect",
+      "subtitle": "Lowering Perceived Risk",
+      "definition": "Lower perceived risk increases willingness to act. Guarantees, trials and reversible commitments move a viewer who would not otherwise move.",
+      "detection": "hybrid",
+      "measured_signals": [
+        "risk_reversal_phrase"
+      ],
+      "where_it_should_land": [
+        "close"
+      ],
+      "applies_when": {
+        "requires": []
+      },
+      "weight": null
+    },
+    {
+      "id": "bandwagon",
+      "number": 14,
+      "name": "The Bandwagon Effect",
+      "subtitle": "People Follow the Crowd",
+      "definition": "Evidence that others have already acted is itself a reason to act. A specific adoption number outperforms a vague claim of popularity.",
+      "detection": "measured",
+      "measured_signals": [
+        "adoption_numeral",
+        "social_proof_phrase"
+      ],
+      "where_it_should_land": [
+        "body"
+      ],
+      "applies_when": {
+        "requires": [
+          "transcript_or_ocr"
+        ]
+      },
+      "weight": null
+    },
+    {
+      "id": "blind_spot_bias",
+      "number": 15,
+      "name": "Blind-Spot Bias",
+      "subtitle": "Biases That Go Unnoticed",
+      "definition": "The tendency to see bias in others while missing it in oneself. In advertising this is the marketer's assumption that the viewer already shares their framing, their vocabulary or their sense of what matters.",
+      "detection": "judged",
+      "scored": false,
+      "scored_note": "REPORT-LEVEL ONLY, deliberately unscored. This bias is a property of the marketer, not an artefact present in the frames. Scoring it would mean inventing a measurement, which breaks the rule the rest of this framework rests on. It is returned as a single observation with no rating and no weight.",
+      "measured_signals": [],
+      "where_it_should_land": [],
+      "applies_when": {
+        "requires": [
+          "brand_brain"
+        ]
+      },
+      "not_applicable_reason": "no_brand_brain",
+      "weight": null
+    }
+  ],
+  "lexicons": {
+    "note": "Word lists the measured detectors match against. Kept in config so they can be tuned without a code change. Matching is case-insensitive and applies to both the transcript and the OCR text. Matched against a real ScaleSerum script: 'close on' and 'closes' were missing and 'Applications close on the 30th' went undetected, so verb forms are listed explicitly rather than assumed.",
+    "deadline_phrase": [
+      "applications close",
+      "before it",
+      "by the",
+      "close on",
+      "closes",
+      "closes on",
+      "closing",
+      "closing on",
+      "cut-off",
+      "cutoff",
+      "deadline",
+      "doors close",
+      "ends ",
+      "expires",
+      "final call",
+      "hurry",
+      "last chance",
+      "last day",
+      "limited time",
+      "until "
+    ],
+    "scarcity_numeral": [
+      "only ",
+      "just ",
+      "seats",
+      "places",
+      "spots",
+      "remaining",
+      "left"
+    ],
+    "risk_reversal_phrase": [
+      "money-back",
+      "money back",
+      "free trial",
+      "cancel anytime",
+      "no obligation",
+      "refund",
+      "guarantee",
+      "risk-free",
+      "risk free"
+    ],
+    "social_proof_phrase": [
+      "already",
+      "alumni",
+      "certified",
+      "companies",
+      "customers",
+      "directors",
+      "graduates",
+      "have been",
+      "have joined",
+      "join",
+      "members",
+      "placed",
+      "professionals",
+      "rated",
+      "reviews",
+      "students",
+      "trusted by"
+    ],
+    "cta_strong": [
+      "apply",
+      "book",
+      "register",
+      "enrol",
+      "enroll",
+      "download",
+      "claim",
+      "start",
+      "join",
+      "reserve"
+    ],
+    "cta_weak": [
+      "submit",
+      "sign up",
+      "learn more",
+      "click here",
+      "get started"
+    ],
+    "price_pattern": "(?:[$£€₹]|\\bRs\\.?\\b|\\bINR\\b|\\bUSD\\b)\\s?\\d[\\d,.]*"
+  }
+}

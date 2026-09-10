@@ -1,0 +1,1170 @@
+{
+  "info": {
+    "name": "ScaleSerum - Vision Lab",
+    "description": "LAST UPDATED 2026-09-10 - adds 00 Upload a video (POST /api/vision-lab/upload).\nIMPORTING OVER AN OLDER COPY: choose REPLACE, not 'Import as copy' - a copy is\nwhat produces the [CONFLICT] duplicate in the sidebar. Replacing clears the\nvariables; re-enter api_key (creative_url is filled in by 00).\n\n\n\nAI-predicted attention analysis for ad creatives.\n\nRUN THE FOLDERS IN ORDER. `1 Happy path` submits a creative, polls it to completion and then exercises history, rescore and delete. `2 Failure paths` covers every reason code the UI branches on, and is the half that catches regressions - the happy path rarely breaks quietly.\n\nBEFORE YOU RUN\n1. Set `base_url` (http://localhost:3001 locally).\n2. Set `api_key` to the API_KEY from .env. It ships BLANK - never commit a real one.\n3. EITHER run `00 Upload a video` (pick a file in its Body tab - it fills\n   `creative_url` for you), OR set `creative_url` to a presigned GET link:\n     python scripts/presign.py vision-lab-test/Ads1.mp4\n   The four uploaded ads are Ads1.mp4, Ad2.mp4, Ad3.mp4 and Ad4.mp4 under\n   s3://aife-media-prod/vision-lab-test/.\n4. The service needs VL_ENABLED=true and the URL's host in VL_ALLOWED_URL_HOSTS.\n5. vision-worker must be running, or every poll stays at `queued`:\n     python -m vision_lab.worker\n   RESTART THE WORKER, not just the API, after any change to vision_lab/ - the\n   pipeline runs in the worker process.\n\n6. Collection Runner -> set Delay to 3000 ms. That is what paces the polling loop.\n\nMILESTONE D: the report is complete. `stub` is false, all six scores are real, and\nthe transcript, the 15 triggers and the written recommendations are each either\npresent or state why they are absent.\n\nRequest 03 prints two things to the console that no assertion can judge for you:\n  EVIDENCE AUDIT - what the model tried to say and could not support.\n  MODEL INVENTED DEFECTS - anything it nominated that Python had not found.\nBoth should normally be small. Watch them; they are how you notice the\ninterpretation layer drifting.\n\nTranscription and interpretation are OPTIONAL. Without DEEPGRAM_API_KEY or\nGEMINI_API_KEY the analysis still completes with every measurement and every\nscore - the affected blocks say why they are missing. Folder 0 reports which of\nthem this server has.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3001"
+    },
+    {
+      "key": "api_key",
+      "value": ""
+    },
+    {
+      "key": "creative_url",
+      "value": ""
+    },
+    {
+      "key": "creative_id",
+      "value": "cre_ads1_postman"
+    },
+    {
+      "key": "ad_number",
+      "value": "042"
+    },
+    {
+      "key": "analysis_id",
+      "value": ""
+    },
+    {
+      "key": "bad_format_id",
+      "value": "",
+      "type": "string",
+      "description": "Set at runtime by 'Unsupported format' and read by 'Rescore an unfinished analysis -> 409'. Declared so the 409 request can be run on its own without {{bad_format_id}} arriving at the server as a literal string."
+    },
+    {
+      "key": "poll_url",
+      "value": ""
+    },
+    {
+      "key": "heatmap_url",
+      "value": ""
+    },
+    {
+      "key": "poll_tries",
+      "value": "0",
+      "type": "string",
+      "description": "Polling counter, managed by request 02."
+    }
+  ],
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "X-API-Key"
+      },
+      {
+        "key": "value",
+        "value": "{{api_key}}"
+      },
+      {
+        "key": "in",
+        "value": "header"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "0 Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('service is up', () => pm.expect(body.ok).to.be.true);",
+                  "pm.test('vision lab imported', () => pm.expect(body.vision_lab.available).to.be.true);",
+                  "pm.test('vision lab is enabled', () => pm.expect(body.vision_lab.enabled).to.be.true);",
+                  "pm.test('storage is configured', () => pm.expect(body.vision_lab.storage).to.eql('configured'));",
+                  "pm.test('no secret leaks into health', () => {",
+                  "  const raw = pm.response.text().toLowerCase();",
+                  "  pm.expect(raw).to.not.include('mongodb+srv');",
+                  "  pm.expect(raw).to.not.include('amazonaws');",
+                  "});",
+                  "console.log('worker:', JSON.stringify(body.vision_lab.worker));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1 Happy path",
+      "item": [
+        {
+          "name": "00 Upload a video",
+          "request": {
+            "method": "POST",
+            "description": "Upload a creative straight to Vision Lab - form-data, no S3 console, no presign script. PICK YOUR FILE in the `file` row of the Body tab before sending.\n\nOn success the returned link is written into `creative_url` automatically, so 01 runs next exactly as before.\n\nSet `analyze` to true to also queue the analysis in this one call - then skip 01 and go straight to 02.",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": ".mp4 .mov .webm .m4v .jpg .jpeg .png .webp - up to 400 MB"
+                },
+                {
+                  "key": "creative_id",
+                  "value": "{{creative_id}}",
+                  "type": "text"
+                },
+                {
+                  "key": "division",
+                  "value": "directors_institute",
+                  "type": "text"
+                },
+                {
+                  "key": "ad_number",
+                  "value": "{{ad_number}}",
+                  "type": "text"
+                },
+                {
+                  "key": "brand_names",
+                  "value": "Director's Institute,DI",
+                  "type": "text",
+                  "description": "Comma-separated"
+                },
+                {
+                  "key": "analyze",
+                  "value": "false",
+                  "type": "text",
+                  "description": "true = also queue the analysis. Left false so 01 still runs next."
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/vision-lab/upload",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "vision-lab",
+                "upload"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "// NO FILE CHOSEN IS NOT A FAILURE OF THE SERVICE.",
+                  "// 00 is optional - a run can use a creative_url set by hand instead - so a",
+                  "// Collection Runner pass must not go red because the file row was left empty.",
+                  "// Depending on how the empty row is sent, the answer is a 422 naming the",
+                  "// missing `file` field, or a 200 with reason `no_creative`. Both mean the same.",
+                  "const missingField = pm.response.code === 422 &&",
+                  "  JSON.stringify(body.detail || '').includes('\"file\"');",
+                  "if (missingField || body.reason === 'no_creative') {",
+                  "  pm.test.skip('no file chosen - pick one in the Body tab to upload', () => {});",
+                  "  console.log('00 skipped: no file chosen. 01 will use the creative_url already set.');",
+                  "  return;",
+                  "}",
+                  "",
+                  "if (pm.response.code === 413) {",
+                  "  pm.test('too large - ' + body.message, () => pm.expect.fail(body.message));",
+                  "  return;",
+                  "}",
+                  "",
+                  "pm.test('always 200', () => pm.response.to.have.status(200));",
+                  "pm.test('the file was stored', () =>",
+                  "  pm.expect(body.uploaded, body.reason + ': ' + body.message).to.be.true);",
+                  "",
+                  "if (body.uploaded) {",
+                  "  pm.test('stored under its own prefix, not the heatmaps or the reference ads', () => {",
+                  "    pm.expect(body.upload.object_key).to.not.match(/^vision-lab\\//);",
+                  "    pm.expect(body.upload.object_key).to.not.match(/^vision-lab-test\\//);",
+                  "  });",
+                  "  pm.test('returned a link /analyze can use', () =>",
+                  "    pm.expect(body.upload.creative_url).to.include('X-Amz-Signature'));",
+                  "  pm.test('recorded the real size', () =>",
+                  "    pm.expect(body.upload.size_bytes).to.be.above(0));",
+                  "",
+                  "  // Straight into creative_url - no presign, no copy, no paste, and no",
+                  "  // line break smuggled in from a wrapped terminal.",
+                  "  pm.collectionVariables.set('creative_url', body.upload.creative_url);",
+                  "  console.log('Uploaded ' + (body.upload.size_bytes / 1048576).toFixed(1) +",
+                  "              ' MB -> ' + body.upload.object_key);",
+                  "",
+                  "  if (body.analysis) {",
+                  "    pm.collectionVariables.set('analysis_id', body.analysis.analysis_id);",
+                  "    pm.collectionVariables.set('poll_url', body.analysis.poll_url);",
+                  "    console.log('analyze=true: queued ' + body.analysis.analysis_id +",
+                  "                ' - skip 01 and go straight to 02.');",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "01 Submit a creative",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"creative_id\": \"{{creative_id}}\",\n  \"division\": \"directors_institute\",\n  \"ad_number\": \"{{ad_number}}\",\n  \"creative\": {\n    \"url\": \"{{creative_url}}\",\n    \"kind\": \"video\",\n    \"mime_type\": \"video/mp4\",\n    \"duration_seconds\": 24,\n    \"width\": 1920,\n    \"height\": 1080\n  },\n  \"brand_assets\": {\n    \"brand_names\": [\"Director's Institute\", \"DI\"]\n  },\n  \"options\": { \"force_reanalysis\": false }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/vision-lab/analyze",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "vision-lab",
+                "analyze"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('always 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('returned an analysis_id', () => pm.expect(body.analysis_id).to.be.a('string').and.not.empty);",
+                  "pm.test('queued, not processed inline', () => pm.expect(body.status).to.eql('queued'));",
+                  "pm.test('told us where to poll', () => pm.expect(body.poll_url).to.include(body.analysis_id));",
+                  "pm.test('told us how often', () => pm.expect(body.suggested_poll_interval_seconds).to.be.above(0));",
+                  "// WHAT THIS CATCHES IS 30 SECONDS, NOT 3.",
+                  "// If frame decoding ever moves into the API process this sits here",
+                  "// for the length of the whole analysis. The bound is 5 s rather than",
+                  "// 1.5 s because the FIRST request to a freshly started process pays a",
+                  "// one-off ~2 s import cost; every one after it is ~20 ms.",
+                  "pm.test('responded fast - this must not do the work', () =>",
+                  "  pm.expect(pm.response.responseTime).to.be.below(5000));",
+                  "pm.collectionVariables.set('analysis_id', body.analysis_id);",
+                  "pm.collectionVariables.set('poll_url', body.poll_url);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 Poll until finished",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/vision-lab/analysis/{{analysis_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "vision-lab",
+                "analysis",
+                "{{analysis_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('always 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const active = ['queued','probing','analyzing_frames','transcribing','interpreting','scoring'];",
+                  "const terminal = ['completed','failed','skipped'];",
+                  "pm.test('status is one we published', () => pm.expect(active.concat(terminal)).to.include(body.status));",
+                  "",
+                  "// The wait between polls comes from the Collection Runner's Delay",
+                  "// setting (set it to 3000 ms). Postman's sandbox does not block on",
+                  "// setTimeout, so a delay written here would do nothing at all.",
+                  "if (active.includes(body.status)) {",
+                  "  pm.test('no scores while still working', () => pm.expect(body.scores).to.be.null);",
+                  "  const tries = (pm.collectionVariables.get('poll_tries') || 0) + 1;",
+                  "  pm.collectionVariables.set('poll_tries', tries);",
+                  "  if (tries > 40) {",
+                  "    pm.collectionVariables.set('poll_tries', 0);",
+                  "    pm.expect.fail('still ' + body.status + ' after 40 polls - is vision-worker running? Check: pm2 logs vision-worker');",
+                  "  } else {",
+                  "    postman.setNextRequest('02 Poll until finished');",
+                  "  }",
+                  "} else {",
+                  "  pm.collectionVariables.set('poll_tries', 0);",
+                  "  pm.test('finished successfully', () => pm.expect(body.status).to.eql('completed'));",
+                  "  console.log('reached ' + body.status + ' after ' + (body.attempts || 0) + ' worker attempt(s)');",
+                  "}",
+                  "",
+                  "// `reason` is carried at the top level AND inside `availability` on",
+                  "// every response, so the frontend never has to look in two places.",
+                  "if (body.status === 'failed') {",
+                  "  pm.test('a failure states its reason in both places', () => {",
+                  "    pm.expect(body.reason).to.be.a('string');",
+                  "    pm.expect(body.availability.reason).to.eql(body.reason);",
+                  "  });",
+                  "  pm.test('a failed analysis never invents a scorecard', () =>",
+                  "    pm.expect(body.scores).to.be.null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 The report contract",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/vision-lab/analysis/{{analysis_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "vision-lab",
+                "analysis",
+                "{{analysis_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('completed', () => pm.expect(body.status).to.eql('completed'));",
+                  "",
+                  "pm.test('every top-level field the frontend renders is present', () => {",
+                  "  ['overall','scores','media','heatmap','key_moments','timeline',",
+                  "   'psychology','recommendations','versions','config_disclosure']",
+                  "    .forEach(k => pm.expect(body, k).to.have.property(k));",
+                  "});",
+                  "",
+                  "pm.test('all six metrics', () => {",
+                  "  ['attention','focus','cognitive_demand','clarity','brand_memory','engagement']",
+                  "    .forEach(m => pm.expect(body.scores).to.have.property(m));",
+                  "});",
+                  "",
+                  "pm.test('cognitive demand is lower-is-better and says so', () =>",
+                  "  pm.expect(body.scores.cognitive_demand.direction).to.eql('lower_better'));",
+                  "",
+                  "pm.test('no bands are invented before management sets them', () => {",
+                  "  pm.expect(body.overall.band).to.be.null;",
+                  "  pm.expect(body.overall.band_reason).to.eql('thresholds_not_configured');",
+                  "});",
+                  "",
+                  "pm.test('placeholders are disclosed, never passed off as decisions', () => {",
+                  "  pm.expect(body.config_disclosure.weighting).to.eql('equal_unweighted_placeholder');",
+                  "  pm.expect(body.config_disclosure.unconfirmed).to.be.an('array').that.is.not.empty;",
+                  "});",
+                  "",
+                  "pm.test('versions are stamped for reproducibility', () => {",
+                  "  pm.expect(body.versions.framework_version).to.be.a('string');",
+                  "  pm.expect(body.versions.psychology_version).to.be.a('string');",
+                  "});",
+                  "",
+                  "// THE INPUT CREDENTIAL MUST NEVER COME BACK - but our OWN heatmap URLs are",
+                  "// signed at read time and legitimately carry a signature. Asserting that no",
+                  "// signature appears anywhere contradicted that the moment heatmaps became",
+                  "// real, so this checks for the CREATIVE's signature specifically.",
+                  "pm.test('the creative credential never reaches a response', () => {",
+                  "  pm.expect(body).to.not.have.property('creative_url');",
+                  "  pm.expect(body).to.not.have.property('wordmark_url');",
+                  "  const signature = (pm.collectionVariables.get('creative_url') || '')",
+                  "    .split('X-Amz-Signature=')[1];",
+                  "  if (signature) {",
+                  "    pm.expect(pm.response.text(), 'the presigned input signature came back')",
+                  "      .to.not.include(signature.split('&')[0]);",
+                  "  }",
+                  "});",
+                  "",
+                  "pm.test('nothing in the report is a placeholder', () => {",
+                  "  pm.expect(body.stub, 'stub').to.be.false;",
+                  "  pm.expect(body.media.frames_analyzed).to.be.above(0);",
+                  "});",
+                  "",
+                  "// ---- Milestone B: measurements are real -------------------------",
+                  "pm.test('says which backend produced the numbers', () => {",
+                  "  pm.expect(body.vision.saliency_method).to.be.oneOf(['onnx','spectral_residual','stub']);",
+                  "  pm.expect(body.vision).to.have.property('saliency_trained');",
+                  "});",
+                  "",
+                  "if (body.vision.saliency_trained === false) {",
+                  "  console.log('BASELINE SALIENCY - real measurements, but not a trained model.');",
+                  "  console.log(body.vision.saliency_note);",
+                  "}",
+                  "",
+                  "pm.test('the whole ad was covered, not just the start', () => {",
+                  "  pm.expect(body.media.coverage_fraction).to.be.above(0.98);",
+                  "});",
+                  "",
+                  "pm.test('frames were actually decoded', () => {",
+                  "  pm.expect(body.media.frames_analyzed).to.be.above(0);",
+                  "  pm.expect(body.media.width).to.be.above(0);",
+                  "  pm.expect(body.media.codec).to.be.a('string');",
+                  "});",
+                  "",
+                  "pm.test('measurements came back', () => {",
+                  "  const m = body.measurements;",
+                  "  pm.expect(m.frames).to.be.above(0);",
+                  "  pm.expect(m.shot_count).to.be.at.least(0);",
+                  "  pm.expect(m).to.have.property('brand');",
+                  "  pm.expect(m).to.have.property('cta');",
+                  "});",
+                  "",
+                  "pm.test('the heatmap URL is signed at read time, not stored', () => {",
+                  "  if (body.heatmap.object_key) {",
+                  "    pm.expect(body.heatmap.image_url, 'signed url').to.include('X-Amz-Signature');",
+                  "  }",
+                  "});",
+                  "",
+                  "// ---- Milestone C: the scores are real ---------------------------",
+                  "// A metric that could not be measured is NULL WITH A REASON, never a",
+                  "// zero - 'we could not measure this' and 'this creative did badly' are",
+                  "// different findings and the report must not conflate them.",
+                  "pm.test('every metric is either scored or says why not', () => {",
+                  "  Object.entries(body.scores).forEach(([id, entry]) => {",
+                  "    if (entry.score === null) {",
+                  "      pm.expect(entry.reason, id + ' is null with no stated reason').to.be.a('string');",
+                  "    } else {",
+                  "      pm.expect(entry.score, id).to.be.within(0, 100);",
+                  "    }",
+                  "  });",
+                  "});",
+                  "",
+                  "pm.test('the overall says how many metrics it is built on', () => {",
+                  "  pm.expect(body.overall).to.have.property('metrics_scored');",
+                  "  pm.expect(body.overall).to.have.property('metrics_missing');",
+                  "});",
+                  "",
+                  "// ---- Milestone D: the interpretation layer ----------------------",
+                  "pm.test('the transcript is present or states why not', () => {",
+                  "  pm.expect(body.transcript, 'transcript block').to.be.an('object');",
+                  "  if (body.transcript.available) {",
+                  "    pm.expect(body.transcript.segments).to.be.an('array').that.is.not.empty;",
+                  "    body.transcript.segments.forEach(s => {",
+                  "      pm.expect(s, 'every line carries what the panel renders').to.include.keys('t', 'text', 'attention', 'in_weak_zone');",
+                  "    });",
+                  "  } else {",
+                  "    pm.expect(body.transcript.reason, 'a missing transcript must say why').to.be.a('string');",
+                  "    console.log('NO TRANSCRIPT: ' + body.transcript.reason);",
+                  "  }",
+                  "});",
+                  "",
+                  "pm.test('all 15 triggers are reported, each with a status', () => {",
+                  "  pm.expect(body.psychology.triggers).to.have.lengthOf(15);",
+                  "  body.psychology.triggers.forEach(t => {",
+                  "    pm.expect(t.status, t.id).to.be.oneOf(['present','weak','absent','not_applicable','unsupported']);",
+                  "  });",
+                  "});",
+                  "",
+                  "// THE RULE THE WHOLE FEATURE RESTS ON: no recommendation without a",
+                  "// measured defect behind it. Every one is written ABOUT an entry in",
+                  "// `defects` and carries its timestamp and its counted numbers.",
+                  "pm.test('every recommendation is anchored to a measured defect', () => {",
+                  "  const ids = (body.defects || []).map(d => d.defect_id);",
+                  "  (body.recommendations || []).forEach(r => {",
+                  "    pm.expect(ids, r.title + ' cites a defect nobody found').to.include(r.defect_id);",
+                  "    pm.expect(r.anchor, 'anchor').to.be.an('object');",
+                  "    pm.expect(r.anchor.measured, 'the numbers that produced it').to.be.an('object');",
+                  "  });",
+                  "});",
+                  "",
+                  "pm.test('the interpretation pass says whether it ran', () => {",
+                  "  pm.expect(body.interpretation).to.have.property('available');",
+                  "  if (!body.interpretation.available) {",
+                  "    pm.expect(body.interpretation.reason).to.be.a('string');",
+                  "    console.log('NO INTERPRETATION: ' + body.interpretation.reason);",
+                  "  }",
+                  "});",
+                  "",
+                  "// Not an assertion - a number to watch. It is what the model tried to",
+                  "// say and could not support.",
+                  "const audit = body.interpretation && body.interpretation.evidence_audit;",
+                  "if (audit) {",
+                  "  console.log('EVIDENCE AUDIT: ' + audit.dropped + ' of ' + audit.checked + ' claims dropped');",
+                  "  (audit.unsupported || []).forEach(u => console.log('  ' + u.where + ' -> ' + u.reason));",
+                  "}",
+                  "const invented = (body.interpretation || {}).dropped_invented_recommendations || [];",
+                  "if (invented.length) {",
+                  "  console.log('MODEL INVENTED DEFECTS (refused): ' + invented.join(', '));",
+                  "}",
+                  "",
+                  "if (body.heatmap && body.heatmap.image_url) {",
+                  "  pm.collectionVariables.set('heatmap_url', body.heatmap.image_url);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04 Resubmit is idempotent",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"creative_id\": \"{{creative_id}}\",\n  \"division\": \"directors_institute\",\n  \"ad_number\": \"{{ad_number}}\",\n  \"creative\": {\n    \"url\": \"{{creative_url}}\",\n    \"kind\": \"video\",\n    \"mime_type\": \"video/mp4\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/vision-lab/analyze",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "vision-lab",
+                "analyze"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('recognised as the same creative', () => pm.expect(body.idempotent_hit).to.be.true);",
+                  "pm.test('same analysis, no second job', () =>",
+                  "  pm.expect(body.analysis_id).to.eql(pm.collectionVariables.get('analysis_id')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03b Open the heatmap image",
+          "description": "Fetches the signed overlay URL from the report. Open the response in Postman's image preview - this is the picture the Attention Report screen shows, and eyeballing it is the fastest way to tell whether the vision layer is doing anything sensible.",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{heatmap_url}}",
+              "host": [
+                "{{heatmap_url}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('the overlay downloads', () => pm.response.to.have.status(200));",
+                  "pm.test('it is a PNG', () =>",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('image'));",
+                  "pm.test('it is not an empty file', () =>",
+                  "  pm.expect(pm.response.responseSize).to.be.above(2000));",
+                  "console.log('Open the Body tab to see the attention overlay.');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05 Latest by creative",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/vision-lab/analysis/by-creative/{{creative_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "vision-lab",
+                "analysis",
+                "by-creative",
+                "{{creative_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('same analysis', () =>",
+                  "  pm.expect(pm.response.json().analysis_id).to.eql(pm.collectionVariables.get('analysis_id')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06 History for this ad number",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/vision-lab/history?ad_number={{ad_number}}&limit=25",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "vision-lab",
+                "history"
+              ],
+              "query": [
+                {
+                  "key": "ad_number",
+                  "value": "{{ad_number}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "25"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('returns rows', () => pm.expect(body.count).to.be.above(0));",
+                  "pm.test('filtered to this ad number', () =>",
+                  "  body.items.forEach(i => pm.expect(i.ad_number).to.eql(pm.collectionVariables.get('ad_number'))));",
+                  "pm.test('newest first', () => {",
+                  "  const dates = body.items.map(i => new Date(i.created_at).getTime());",
+                  "  pm.expect(dates).to.eql(dates.slice().sort((a,b) => b-a));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07 Rescore (no reprocessing)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/api/vision-lab/analysis/{{analysis_id}}/rescore",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "vision-lab",
+                "analysis",
+                "{{analysis_id}}",
+                "rescore"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('still completed', () => pm.expect(body.status).to.eql('completed'));",
+                  "pm.test('config disclosure refreshed', () =>",
+                  "  pm.expect(body.config_disclosure).to.have.property('weighting'));",
+                  "pm.test('fast - no ffmpeg, no model, no LLM', () =>",
+                  "  pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "console.log('Watch the worker log: nothing should appear there for a rescore.');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08 Delete the analysis",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/api/vision-lab/analysis/{{analysis_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "vision-lab",
+                "analysis",
+                "{{analysis_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('deleted', () => pm.expect(pm.response.json().deleted).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09 Deleted analysis is gone",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/vision-lab/analysis/{{analysis_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "vision-lab",
+                "analysis",
+                "{{analysis_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 after delete', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2 Failure paths",
+      "description": "These are the requests that catch regressions. Every one asserts a stable `reason` the UI branches on.",
+      "item": [
+        {
+          "name": "Missing API key -> 401",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/vision-lab/history",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "vision-lab",
+                "history"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', () => pm.response.to.have.status(401));",
+                  "pm.test('this is a backend bug, never shown to a user', () =>",
+                  "  pm.expect(pm.response.json().detail).to.include('API key'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "URL off the allowlist -> url_not_allowed",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"creative_id\": \"cre_ssrf_probe\",\n  \"creative\": {\n    \"url\": \"https://169.254.169.254/latest/meta-data/\",\n    \"kind\": \"video\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/vision-lab/analyze",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "vision-lab",
+                "analyze"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('always 200, even for a refusal', () => pm.response.to.have.status(200));",
+                  "pm.test('refused - the worker must never fetch this', () =>",
+                  "  pm.expect(body.reason).to.eql('url_not_allowed'));",
+                  "pm.test('availability says false', () =>",
+                  "  pm.expect(body.availability.available).to.be.false);",
+                  "pm.test('a human-readable message came with it', () =>",
+                  "  pm.expect(body.message).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Plain http -> url_not_allowed",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"creative_id\": \"cre_http\",\n  \"creative\": { \"url\": \"http://example.com/ad.mp4\", \"kind\": \"video\" }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/vision-lab/analyze",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "vision-lab",
+                "analyze"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('refused', () => pm.expect(pm.response.json().reason).to.eql('url_not_allowed'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "No creative URL -> no_creative",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"creative_id\": \"cre_empty\",\n  \"creative\": {}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/vision-lab/analyze",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "vision-lab",
+                "analyze"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 with a stated reason, not a 422', () => pm.response.to.have.status(200));",
+                  "pm.test('no_creative', () => pm.expect(pm.response.json().reason).to.eql('no_creative'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unsupported format -> unsupported_format",
+          "description": "A .mp4 key declared as application/pdf. The refusal happens in the worker, so poll the returned id to see it. This is a real mismatch worth surfacing: an S3 object whose ContentType contradicts its key must not be guessed around and handed to ffmpeg.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"creative_id\": \"cre_pdf\",\n  \"creative\": { \"url\": \"{{creative_url}}\", \"mime_type\": \"application/pdf\" }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/vision-lab/analyze",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "vision-lab",
+                "analyze"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('accepted, then refused by the worker', () => pm.response.to.have.status(200));",
+                  "const id = pm.response.json().analysis_id;",
+                  "pm.collectionVariables.set('bad_format_id', id);",
+                  "console.log('Poll this id to see unsupported_format:', id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown analysis_id -> 404",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/vision-lab/analysis/does-not-exist",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "vision-lab",
+                "analysis",
+                "does-not-exist"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Rescore an unfinished analysis -> 409",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/api/vision-lab/analysis/{{bad_format_id}}/rescore",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "vision-lab",
+                "analysis",
+                "{{bad_format_id}}",
+                "rescore"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 - only a completed analysis can be rescored', () =>",
+                  "  pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3 The rest of the service still works",
+      "description": "Vision Lab must not be able to break the three features that were already live. Run this after every Vision Lab change.",
+      "item": [
+        {
+          "name": "Brand Brain rewrite-persona still answers",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"draft\": \"senior execs who want a board seat\",\n  \"context\": { \"business\": \"executive education\" }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/brand-brain/rewrite-persona",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "brand-brain",
+                "rewrite-persona"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('still 200 - onboarding is unaffected', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// READ EVERY SCOPE, NOT JUST THE COLLECTION.",
+          "//",
+          "// Postman resolves {{api_key}} from the environment first, then the",
+          "// collection, then globals. This guard used to read only the collection",
+          "// copy, so an api_key set in an environment - which Postman's own",
+          "// assistant tells you to do - made the request valid and the guard block",
+          "// it anyway. pm.variables.get() resolves exactly as the request will.",
+          "const get = (name) => pm.variables.get(name);",
+          "",
+          "// A PASTED URL OFTEN ARRIVES WITH A LINE BREAK IN IT.",
+          "//",
+          "// A long presigned URL wraps when copied out of a terminal or a chat, and",
+          "// the break comes along with it. A raw newline inside a JSON string is",
+          "// illegal, so the request dies at the FastAPI layer with",
+          "// `422 json_invalid / Invalid control character` - which looks like a",
+          "// server fault and is not one. No presigned URL contains whitespace, so",
+          "// stripping all of it is safe.",
+          "const pasted = get('creative_url') || '';",
+          "const cleaned = pasted.replace(/\\s+/g, '');",
+          "if (cleaned !== pasted) {",
+          "  pm.variables.set('creative_url', cleaned);               // this request",
+          "  if (pm.collectionVariables.get('creative_url') === pasted) {",
+          "    pm.collectionVariables.set('creative_url', cleaned);    // and the saved copy",
+          "  }",
+          "  console.log('creative_url contained whitespace (probably a line break from ' +",
+          "              'copying). Stripped it - the value is now one line.');",
+          "}",
+          "",
+          "// STOP ON AN UNSET VARIABLE INSTEAD OF SENDING AN EMPTY ONE.",
+          "//",
+          "// An empty creative_url is a valid request as far as the API is concerned:",
+          "// it comes back `no_creative`, which reads like a service bug. An empty",
+          "// api_key comes back 401 on everything.",
+          "const body = (pm.request.body && pm.request.body.raw) || '';",
+          "const uses = (name) => body.includes('{{' + name + '}}');",
+          "const noAuth = pm.request.auth && pm.request.auth.type === 'noauth';",
+          "",
+          "if (!noAuth && !get('api_key')) {",
+          "  throw new Error(",
+          "    'api_key is empty, so every request will come back 401. Set it in ' +",
+          "    'Collection > Variables > api_key > CURRENT VALUE (or in your active ' +",
+          "    'environment), then press Ctrl+S.');",
+          "}",
+          "",
+          "if (uses('creative_url') && !cleaned) {",
+          "  throw new Error(",
+          "    'creative_url is empty. Sending this would submit an empty URL and come ' +",
+          "    'back as `no_creative` - the service is fine, the variable is not. Run ' +",
+          "    '00 Upload a video to fill it in, or paste a presigned URL into ' +",
+          "    'Collection > Variables > creative_url > CURRENT VALUE, then press Ctrl+S.');",
+          "}",
+          "",
+          "// A presigned URL expires. Say so before the worker fails on a 403.",
+          "const stamp = (cleaned.match(/X-Amz-Date=(\\d{8}T\\d{6}Z)/) || [])[1];",
+          "const life = parseInt((cleaned.match(/X-Amz-Expires=(\\d+)/) || [])[1], 10);",
+          "if (uses('creative_url') && stamp && life) {",
+          "  const signed = Date.UTC(stamp.slice(0, 4), stamp.slice(4, 6) - 1, stamp.slice(6, 8),",
+          "                          stamp.slice(9, 11), stamp.slice(11, 13), stamp.slice(13, 15));",
+          "  const left = Math.round((signed + life * 1000 - Date.now()) / 60000);",
+          "  if (left <= 0) {",
+          "    throw new Error('The presigned creative_url expired ' + (-left) + ' minutes ago. ' +",
+          "      'Run 00 Upload a video again, or generate a new one: ' +",
+          "      'python scripts/presign.py vision-lab-test/Ad3.mp4 --quiet');",
+          "  }",
+          "  if (left < 10) { console.log('WARNING: creative_url expires in ' + left + ' minutes.'); }",
+          "}"
+        ]
+      }
+    }
+  ]
+}

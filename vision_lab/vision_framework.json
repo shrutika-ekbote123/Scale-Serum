@@ -1,0 +1,216 @@
+{
+  "framework_version": "vision_v1",
+  "basis": "Attention metric definitions for ScaleSerum Vision Lab. The six metrics and their descriptions come from the Vision Lab prototype approved by management. Everything expressed as a number here is either a documented measurement rule or null - nothing is invented.",
+  "unconfirmed_business_values": [
+    "metric weights",
+    "score bands / thresholds",
+    "weak-zone threshold",
+    "weak-zone minimum duration",
+    "timeline index coefficients",
+    "brand appearance targets",
+    "minimum creative duration",
+    "whether psychological triggers affect the overall score"
+  ],
+  "how_to_configure": "Every business value below is null on purpose. null means 'management has not decided'. Fill a value in, bump framework_version, redeploy - no Python changes are needed. scoring.py reports which of these were still null for every analysis it produces, so a placeholder can never be mistaken for a decision.",
+  "score_max": 100,
+  "rating_levels": [
+    "absent",
+    "weak",
+    "adequate",
+    "strong"
+  ],
+  "rating_scale": null,
+  "rating_scale_note": "Maps each rating level to a fraction of score_max, for the one metric (clarity) that blends an LLM rating with measurements. null means no business mapping exists, so scoring.py spaces the levels uniformly over [0,1] and reports rating_scale_mode='uniform_placeholder'.",
+  "metrics": [
+    {
+      "id": "attention",
+      "name": "Attention",
+      "label": "captures initial gaze",
+      "direction": "higher_better",
+      "basis": "measured",
+      "weight": null,
+      "window": "hook",
+      "signals": [
+        "concentration",
+        "primary_region_mass",
+        "peak_attention"
+      ],
+      "note": "Measured over the first hook_seconds only. No LLM input."
+    },
+    {
+      "id": "focus",
+      "name": "Focus",
+      "label": "attention on the key message",
+      "direction": "higher_better",
+      "basis": "measured",
+      "weight": null,
+      "window": "full",
+      "signals": [
+        "key_message_mass",
+        "competing_peaks"
+      ],
+      "note": "The key message region is named by the LLM and matched by Python to a detected box. A frame with no match is EXCLUDED from the denominator, never scored zero."
+    },
+    {
+      "id": "cognitive_demand",
+      "name": "Cognitive Demand",
+      "label": "effort to understand - lower is better",
+      "direction": "lower_better",
+      "basis": "measured",
+      "weight": null,
+      "window": "full",
+      "signals": [
+        "reading_load",
+        "vo_text_overlap",
+        "competing_peaks",
+        "cut_rate",
+        "text_area_share"
+      ],
+      "note": "Entirely measured. No LLM input. Inverted before it enters the overall score."
+    },
+    {
+      "id": "clarity",
+      "name": "Clarity",
+      "label": "message + CTA are unambiguous",
+      "direction": "higher_better",
+      "basis": "hybrid",
+      "weight": null,
+      "window": "full",
+      "signals": [
+        "cta_present",
+        "cta_legibility",
+        "cta_duration"
+      ],
+      "llm_rating_weight": null,
+      "llm_rating_weight_note": "How much of this score comes from the LLM's ordinal rating versus the measured CTA signals. null means an equal split, reported as a placeholder.",
+      "note": "The only metric an LLM contributes to, and it contributes a RATING, never a number."
+    },
+    {
+      "id": "brand_memory",
+      "name": "Brand Memory",
+      "label": "likelihood brand is remembered",
+      "direction": "higher_better",
+      "basis": "measured",
+      "weight": null,
+      "window": "full",
+      "signals": [
+        "first_appearance_fraction",
+        "total_exposure_seconds",
+        "mass_at_appearance",
+        "peak_overlap",
+        "exposure_count"
+      ],
+      "note": "peak_overlap - whether the brand is on screen during top-quartile attention moments - is the signal that distinguishes a logo that is seen from a logo that is merely present."
+    },
+    {
+      "id": "engagement",
+      "name": "Engagement",
+      "label": "pull to keep watching",
+      "direction": "higher_better",
+      "basis": "measured",
+      "weight": null,
+      "window": "full",
+      "signals": [
+        "curve_area",
+        "dropoff_depth",
+        "dropoff_seconds",
+        "hook_slope",
+        "recovery",
+        "novelty_rate"
+      ],
+      "note": "Derived from the shape of the attention timeline, which is itself a composite index - see timeline below."
+    }
+  ],
+  "weights": {
+    "metric_weights_confirmed": false,
+    "note": "A null weight on a metric means equal weighting. Set a positive number per metric to override, and flip metric_weights_confirmed so the API stops reporting the weighting as a placeholder."
+  },
+  "bands": null,
+  "bands_note": "Score bands / pass-fail thresholds for the overall score. null means none are configured, and the API returns band=null with band_reason='thresholds_not_configured'. Do NOT copy Script Lab's 90/70/50 ad-script bands here - they carry no authority over creative attention.",
+  "timeline": {
+    "unit": "index_0_100",
+    "basis": "derived_composite",
+    "basis_note": "A saliency map sums to 1 on every frame, so it cannot say whether a frame held the viewer. This index is a composite over the terms below. It is NOT measured attention and must never be presented as such.",
+    "coefficients_confirmed": false,
+    "index_terms": [
+      {
+        "id": "concentration",
+        "weight": null,
+        "note": "share of saliency mass in the top 5% of pixels"
+      },
+      {
+        "id": "motion_energy",
+        "weight": null,
+        "note": "mean absolute luma difference from the previous frame"
+      },
+      {
+        "id": "face_presence",
+        "weight": null,
+        "note": "maximum saliency mass on a detected face box"
+      },
+      {
+        "id": "gaze_stability",
+        "weight": null,
+        "note": "1 - earth mover's distance between consecutive maps"
+      },
+      {
+        "id": "text_load",
+        "weight": null,
+        "note": "negative term: words / (reading_speed x shot seconds)"
+      },
+      {
+        "id": "novelty",
+        "weight": null,
+        "note": "recency of the last shot change"
+      }
+    ],
+    "engagement_line": {
+      "note": "The same function with novelty and motion up-weighted and concentration down-weighted. One function, two coefficient sets, so the two lines cannot drift apart in meaning.",
+      "coefficients_confirmed": false
+    },
+    "hook_seconds": 3.0,
+    "hook_seconds_note": "How much of the opening counts as the hook, for the Attention metric and the Halo Effect trigger. 3.0 s is the platform convention for a counted video view; confirm or replace.",
+    "weak_threshold": null,
+    "weak_threshold_placeholder": 35,
+    "min_weak_seconds": null,
+    "min_weak_seconds_placeholder": 1.0,
+    "weak_zone_note": "A weak zone is attention below weak_threshold for at least min_weak_seconds. Both are business decisions about what counts as a dead zone; the placeholders are used until they are set, and every response says so."
+  },
+  "reading_speed_words_per_second": 4,
+  "reading_speed_note": "Average adult reading speed in a non-reading context, used to compute whether on-screen copy can actually be read in the time it is held. 4 w/s is the figure the Vision Lab prototype cites and reports to the user. Confirm or replace - it is quoted verbatim in fix recommendations.",
+  "sampling": {
+    "sample_fps": 2.0,
+    "max_frames": 120,
+    "max_duration_seconds": 180,
+    "min_duration_seconds": null,
+    "min_duration_note": "Below this a video is not scored. null means no minimum is configured, so every video is analysed."
+  },
+  "calibration": {
+    "mode": "provisional_absolute",
+    "min_n": 200,
+    "reference_file": null,
+    "note": "Raw saliency statistics have no natural 0-100 meaning. Until the analysed corpus reaches min_n creatives, scores use documented absolute anchors and report calibration='provisional_absolute'. A score must never imply a percentile while the reference set is small."
+  },
+  "saliency_model": {
+    "name": "UNISAL",
+    "licence": "Apache-2.0 (repository; weights committed within it)",
+    "sha256": "f18d76f49941ce1cad7eda4dce7d2dd71164edb108ccf18b142a3c01ac147d16",
+    "input_width": 384,
+    "input_height": 224,
+    "note": "Set by the Phase 2 bake-off. licence is recorded here because several published saliency checkpoints are research-only and this is a commercial product. sha256 is verified at worker boot - a silently swapped model would change every score invisibly.",
+    "file": "unisal.onnx",
+    "licence_note": "The weights ship inside the Apache-2.0 repository. Training data included Hollywood-2 and UCF-Sports - see vision_lab/BAKEOFF_LICENCES.md before any client-facing use.",
+    "source": "https://github.com/rdroste/unisal",
+    "citation": "Droste, Chen & Noble, Unified Image and Video Saliency Modelling, ECCV 2020",
+    "trained_on": [
+      "SALICON",
+      "DHF1K",
+      "Hollywood-2",
+      "UCF-Sports"
+    ],
+    "output_space": "log",
+    "input_long_side": 384,
+    "input_multiple": 32,
+    "exported": "2026-09-09T09:22:15.176464+00:00"
+  }
+}

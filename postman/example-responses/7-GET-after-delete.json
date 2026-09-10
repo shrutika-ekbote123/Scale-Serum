@@ -1,0 +1,7 @@
+{
+  "request": "GET /api/vision-lab/analysis/{id}",
+  "status_code": 404,
+  "response": {
+    "detail": "analysis_id not found"
+  }
+}

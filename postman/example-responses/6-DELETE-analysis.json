@@ -1,0 +1,9 @@
+{
+  "request": "DELETE /api/vision-lab/analysis/{id}",
+  "status_code": 200,
+  "response": {
+    "deleted": true,
+    "analysis_id": "07dc8103c9644e8fb44f6d6116571cf7",
+    "images_removed": 7
+  }
+}

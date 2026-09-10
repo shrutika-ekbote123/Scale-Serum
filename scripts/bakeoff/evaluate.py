@@ -1,0 +1,236 @@
+"""
+Step 8, part 4 - score every candidate against our own annotated ad frames.
+
+    python scripts/bakeoff/evaluate.py                  (whatever is installed)
+    python scripts/bakeoff/evaluate.py --only spectral,centre
+    python scripts/bakeoff/evaluate.py --trust human    (reviewed regions only)
+
+THE DECISION
+    Mean NSS on the annotated frames. Everything else is context.
+
+    Two numbers are reported for every model: over ALL frames, and over only
+    those a human reviewed. If both rank the models the same way, the fact that
+    part of the ground truth was machine-proposed stops mattering. If they
+    disagree, that is the finding - and the reviewed column wins.
+
+TWO CONTROLS, NOT ONE
+    `centre`   a Gaussian in the middle of the frame. Human attention is
+               heavily centre-biased, so this scores well for free. A candidate
+               that does not clearly beat it has learned nothing.
+    `spectral` what Vision Lab runs in production today. A candidate has to
+               beat this to be worth installing at all.
+
+    A bake-off without both controls can only tell you which model is best, not
+    whether any of them is worth having.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import time
+from datetime import datetime, timezone
+
+import cv2
+import numpy as np
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, HERE)
+sys.path.insert(0, REPO)
+
+from dotenv import load_dotenv  # noqa: E402
+load_dotenv(os.path.join(REPO, ".env"))
+
+import groundtruth as gt  # noqa: E402
+import metrics as mx  # noqa: E402
+import model_adapters as adapters  # noqa: E402
+
+WORKSPACE = os.environ.get("VL_BAKEOFF_DIR", os.path.join(HERE, "workspace"))
+FRAMES_DIR = os.path.join(WORKSPACE, "ad_frames")
+RESULTS = os.path.join(REPO, "vision_lab", "BAKEOFF.md")
+
+
+def load_frames(trust: str, max_area: float) -> dict:
+    path = os.path.join(FRAMES_DIR, "annotations.json")
+    if not os.path.isfile(path):
+        sys.exit(f"No annotations at {path}. Run the annotator first.")
+    return gt.summarise(gt.load(path), trust=trust, max_area=max_area)
+
+
+def prepare(frames: list[dict]) -> list[dict]:
+    """Ground-truth maps and fixation points, once, shared by every model."""
+    prepared = []
+    for frame in frames:
+        image = cv2.imread(os.path.join(FRAMES_DIR, frame["file"]))
+        if image is None:
+            continue
+        h, w = image.shape[:2]
+        truth = gt.build_map(frame["regions"], h, w)
+        if truth is None:
+            continue
+        prepared.append({
+            "file": frame["file"],
+            "reviewed": bool(frame.get("reviewed_by_human")),
+            "pixels": cv2.cvtColor(image, cv2.COLOR_BGR2RGB),
+            "truth": truth,
+            "fixations": gt.fixation_points(frame["regions"], h, w),
+        })
+    return prepared
+
+
+def shuffled_negatives(prepared: list[dict], index: int) -> np.ndarray:
+    """Fixations from a DIFFERENT frame, resized - the negative set for sAUC.
+
+    Using other frames' fixations as negatives is what removes centre bias from
+    the score, because the negatives are just as centre-biased as the positives.
+    """
+    other = prepared[(index + len(prepared) // 2) % len(prepared)]
+    shape = prepared[index]["fixations"].shape
+    if other["fixations"].shape == shape:
+        return other["fixations"]
+    return cv2.resize(other["fixations"], (shape[1], shape[0]),
+                      interpolation=cv2.INTER_NEAREST)
+
+
+def score_model(name: str, predict, prepared: list[dict]) -> dict:
+    per_frame, elapsed = [], 0.0
+    for index, frame in enumerate(prepared):
+        start = time.perf_counter()
+        saliency = predict(frame["pixels"])
+        elapsed += time.perf_counter() - start
+        if saliency is None:
+            continue
+        scores = mx.evaluate(saliency, frame["truth"], frame["fixations"],
+                             shuffled_negatives(prepared, index))
+        scores["file"] = frame["file"]
+        scores["reviewed"] = frame["reviewed"]
+        per_frame.append(scores)
+
+    def average(rows: list[dict], key: str) -> float:
+        values = [r[key] for r in rows if not np.isnan(r.get(key, np.nan))]
+        return float(np.mean(values)) if values else float("nan")
+
+    reviewed = [r for r in per_frame if r["reviewed"]]
+    keys = ("NSS", "CC", "SIM", "KLD", "AUC", "sAUC")
+    return {
+        "model": name,
+        "frames": len(per_frame),
+        "reviewed_frames": len(reviewed),
+        "ms_per_frame": round(elapsed / max(1, len(per_frame)) * 1000, 1),
+        "all": {k: average(per_frame, k) for k in keys},
+        "reviewed": {k: average(reviewed, k) for k in keys},
+        "per_frame": per_frame,
+    }
+
+
+def render(results: list[dict], meta: dict) -> str:
+    lines = [
+        "# Vision Lab - saliency bake-off",
+        "",
+        f"Generated by `scripts/bakeoff/evaluate.py` on "
+        f"{datetime.now(timezone.utc):%Y-%m-%d}.",
+        "",
+        f"**Decision metric: mean NSS on our own annotated ad frames.** "
+        f"{meta['usable']} of {meta['total']} frames usable, "
+        f"{meta['reviewed']} reviewed by a human, "
+        f"{meta['regions']} regions.",
+        "",
+        f"Excluded: {meta['dropped']['junk']} junk detector tokens, "
+        f"{meta['dropped']['too_large']} regions over 60% of frame "
+        f"(a box that large cannot separate a good model from a bad one).",
+        "",
+        "## All frames",
+        "",
+        "| Model | NSS ↑ | CC ↑ | SIM ↑ | KLD ↓ | AUC ↑ | sAUC ↑ | ms/frame |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for row in sorted(results, key=lambda r: -_safe(r["all"]["NSS"])):
+        a = row["all"]
+        lines.append(
+            f"| {row['model']} | **{a['NSS']:.3f}** | {a['CC']:.3f} | "
+            f"{a['SIM']:.3f} | {a['KLD']:.3f} | {a['AUC']:.3f} | "
+            f"{a['sAUC']:.3f} | {row['ms_per_frame']} |")
+
+    lines += ["", "## Human-reviewed frames only", "",
+              "The same table over frames a person checked. If the ranking "
+              "matches the one above, the machine-proposed part of the ground "
+              "truth is not driving the result.", "",
+              "| Model | NSS ↑ | CC ↑ | SIM ↑ | KLD ↓ | AUC ↑ | sAUC ↑ |",
+              "|---|---|---|---|---|---|---|"]
+    for row in sorted(results, key=lambda r: -_safe(r["reviewed"]["NSS"])):
+        r = row["reviewed"]
+        lines.append(
+            f"| {row['model']} | **{r['NSS']:.3f}** | {r['CC']:.3f} | "
+            f"{r['SIM']:.3f} | {r['KLD']:.3f} | {r['AUC']:.3f} | "
+            f"{r['sAUC']:.3f} |")
+
+    lines += ["", "## How to read this", "",
+              "- **NSS** is the decision. Zero is chance; higher means the "
+              "model puts its mass where the ad wants attention.",
+              "- **sAUC** is scored against other frames' fixations, so it "
+              "strips out centre bias. A model near 0.5 here has learned little "
+              "beyond 'look at the middle', whatever its plain AUC says.",
+              "- **KLD is lower-is-better** and punishes misses far harder than "
+              "false alarms; SIM is the opposite. Reading them together says "
+              "more than either alone.",
+              "- **`centre`** is what you get for free from a blob in the "
+              "middle. **`spectral`** is what production runs today. A "
+              "candidate has to beat both to be worth installing.",
+              ""]
+    return "\n".join(lines) + "\n"
+
+
+def _safe(value: float) -> float:
+    return -1e9 if value is None or np.isnan(value) else value
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--only", help="comma-separated model ids")
+    parser.add_argument("--trust", choices=["all", "human"], default="all",
+                        help="'human' scores only regions a person drew")
+    parser.add_argument("--max-area", type=float, default=0.6)
+    args = parser.parse_args()
+
+    meta = load_frames(args.trust, args.max_area)
+    print(f"\n{meta['usable']}/{meta['total']} frames usable, "
+          f"{meta['regions']} regions, {meta['reviewed']} human-reviewed")
+    print(f"dropped: {meta['dropped']}")
+
+    prepared = prepare(meta["frames"])
+    print(f"ground-truth maps built for {len(prepared)} frames\n")
+
+    available = adapters.available()
+    if args.only:
+        wanted = {v.strip() for v in args.only.split(",")}
+        available = {k: v for k, v in available.items() if k in wanted}
+    if not available:
+        sys.exit("No models available. Run fetch_models.py, or install torch.")
+
+    results = []
+    for name, predict in available.items():
+        print(f"  {name:<22} ", end="", flush=True)
+        row = score_model(name, predict, prepared)
+        results.append(row)
+        print(f"NSS {row['all']['NSS']:.3f}   sAUC {row['all']['sAUC']:.3f}   "
+              f"{row['ms_per_frame']:.0f} ms/frame")
+
+    os.makedirs(os.path.dirname(RESULTS), exist_ok=True)
+    with open(RESULTS, "w", encoding="utf-8") as handle:
+        handle.write(render(results, meta))
+    with open(os.path.join(WORKSPACE, "bakeoff_raw.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump({"meta": {k: v for k, v in meta.items() if k != "frames"},
+                   "results": results}, handle, indent=2, default=str)
+
+    print(f"\n{os.path.relpath(RESULTS, REPO)}")
+    best = max(results, key=lambda r: _safe(r["reviewed"]["NSS"]))
+    print(f"Best on reviewed frames: {best['model']} "
+          f"(NSS {best['reviewed']['NSS']:.3f})\n")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
