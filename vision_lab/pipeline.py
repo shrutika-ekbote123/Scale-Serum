@@ -530,6 +530,26 @@ async def _render_heatmaps(analysis_id: str, media: dict, measurements: list,
     except Exception as err:  # noqa: BLE001 - a missing picture is not a failed analysis
         logger.warning("hero heatmap failed [analysis_id=%s]: %s", analysis_id, err)
 
+    # THE POSTER - a plain frame for previews: the /analyze and /history
+    # thumbnail_url, and any list view.
+    #
+    # The same frame the heatmap uses, which is chosen above to skip black
+    # openings, fades and white flashes - rendered WITHOUT the overlay. Not the
+    # first frame: ads so often open on black that a History list built from
+    # first frames would be a column of black squares. Its own try, so a failed
+    # heatmap does not cost the poster.
+    poster = None
+    if deps.make_thumbnail:
+        try:
+            frame = frames[hero_index]
+            key = await _maybe_await(
+                deps.upload, analysis_id, f"poster_{int(frame['t'] * 1000)}.png",
+                deps.make_thumbnail(frame["pixels"]))
+            if key:
+                poster = {"frame_time": frame["t"], "object_key": key}
+        except Exception as err:  # noqa: BLE001 - a missing picture is not a failed analysis
+            logger.warning("poster failed [analysis_id=%s]: %s", analysis_id, err)
+
     strip = []
     if deps.make_thumbnail and len(frames) > 1:
         step = max(1, len(frames) // STRIP_FRAMES)
@@ -543,6 +563,6 @@ async def _render_heatmaps(analysis_id: str, media: dict, measurements: list,
             except Exception as err:  # noqa: BLE001
                 logger.warning("thumbnail failed at %.1fs: %s", frame["t"], err)
 
-    return {"hero": hero, "strip": strip,
+    return {"hero": hero, "strip": strip, "poster": poster,
             "storage": "configured" if hero and hero.get("object_key")
             else "not_configured"}

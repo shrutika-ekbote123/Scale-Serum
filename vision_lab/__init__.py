@@ -96,6 +96,11 @@ STATUS_SKIPPED = "skipped"                    # analysed, but not scored by poli
 TERMINAL_STATUSES = (STATUS_COMPLETED, STATUS_FAILED, STATUS_SKIPPED)
 ACTIVE_STATUSES = (STATUS_QUEUED, STATUS_PROBING, STATUS_ANALYZING_FRAMES,
                    STATUS_TRANSCRIBING, STATUS_INTERPRETING, STATUS_SCORING)
+# Of those, the ones in which a WORKER HOLDS the job and writes a heartbeat.
+# `queued` is not among them: nobody holds a queued job, so there is nothing
+# that could have stopped reporting. See store.is_stale.
+CLAIMED_STATUSES = (STATUS_PROBING, STATUS_ANALYZING_FRAMES, STATUS_TRANSCRIBING,
+                    STATUS_INTERPRETING, STATUS_SCORING)
 
 # --------------------------------------------------------------------------- creative kinds
 KIND_VIDEO = "video"

@@ -63,6 +63,7 @@ from typing import Any, Optional
 
 from . import (
     ACTIVE_STATUSES,
+    CLAIMED_STATUSES,
     PROCESSING_INTERRUPTED,
     STATUS_COMPLETED,
     STATUS_FAILED,
@@ -122,8 +123,21 @@ def compute_fingerprint(request: AnalyzeRequest, *, framework_version: str,
 
 def is_stale(doc: dict, max_seconds: int = STALE_AFTER_SECONDS,
              now: Optional[datetime] = None) -> bool:
-    """Has an in-flight job stopped reporting for longer than we tolerate?"""
-    if not doc or doc.get("status") not in ACTIVE_STATUSES:
+    """Has a job a worker is PROCESSING stopped reporting for too long?
+
+    A JOB WAITING IN THE QUEUE IS NEVER STALE.
+        Staleness is how a worker that died mid-analysis gets noticed: its job
+        stops heartbeating. A queued job has no worker yet, so nothing could
+        have died - its "heartbeat" is only its creation time. Counting it made
+        every job that waited 30 minutes behind a backlog fail as
+        processing_interrupted without ever being analysed: at 60-100 s per ad,
+        the back of a 20-30 ad queue was silently thrown away.
+
+        A worker that is not running at all, with jobs piling up behind it, is a
+        real failure too. It is reported by /health - queue.oldest_waiting_seconds
+        and worker.reason - not by failing the jobs that are waiting for it.
+    """
+    if not doc or doc.get("status") not in CLAIMED_STATUSES:
         return False
     beat = doc.get("heartbeat_at") or doc.get("created_at")
     if not isinstance(beat, datetime):

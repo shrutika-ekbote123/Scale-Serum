@@ -1544,6 +1544,10 @@ async def rescore_sales_call_analysis(analysis_id: str):
 # change.
 # ---------------------------------------------------------------------------
 VISION_LAB_POLL_SECONDS = int(os.environ.get("VL_POLL_INTERVAL_SECONDS", 5))
+# Jobs waiting this long with none being processed means no worker is running:
+# a running worker that is idle claims one within VL_WORKER_IDLE_SLEEP (3 s).
+VL_QUEUE_UNCLAIMED_ALERT_SECONDS = float(
+    os.environ.get("VL_QUEUE_UNCLAIMED_ALERT_SECONDS", 60))
 
 # Which hosts a creative URL may point at. Accepting an arbitrary URL and
 # fetching it server-side is server-side request forgery; the allowlist is what
@@ -1569,6 +1573,7 @@ async def _vision_lab_health() -> dict:
         "enabled": VL_ENABLED,
         "storage": "configured" if vision_lab_store is not None else "not_configured",
         "worker": {"seen_seconds_ago": None, "healthy": False, "in_flight": 0},
+        "queue": {"queued": None, "oldest_waiting_seconds": None},
     }
     if not VISION_LAB_AVAILABLE or vision_lab_store is None:
         return health
@@ -1586,25 +1591,48 @@ async def _vision_lab_health() -> dict:
                                else "not_configured")
     health["interpretation"] = "configured" if GEMINI_API_KEY else "not_configured"
 
-    # An in-flight job's heartbeat is the cheapest liveness signal we have that
-    # does not need the worker to write a second document.
+    # LIVENESS COMES ONLY FROM JOBS A WORKER HOLDS. A queued job's "heartbeat"
+    # is just its creation time, so mixing queued jobs in - as this used to - let
+    # one job queued a second ago make a worker dead for hours look healthy.
     try:
-        active = await vision_lab_analyses.find(
-            {"status": {"$in": list(vl.ACTIVE_STATUSES)}}
+        now = datetime.now(timezone.utc)
+        claimed = await vision_lab_analyses.find(
+            {"status": {"$in": list(vl.CLAIMED_STATUSES)}}
         ).to_list(length=20)
-        health["worker"]["in_flight"] = len(active)
-        beats = [doc.get("heartbeat_at") for doc in active if doc.get("heartbeat_at")]
+        health["worker"]["in_flight"] = len(claimed)
+        beats = [doc.get("heartbeat_at") for doc in claimed if doc.get("heartbeat_at")]
         if beats:
             newest = max(beats)
             if newest.tzinfo is None:
                 newest = newest.replace(tzinfo=timezone.utc)
-            age = (datetime.now(timezone.utc) - newest).total_seconds()
+            age = (now - newest).total_seconds()
             health["worker"]["seen_seconds_ago"] = round(age, 1)
             health["worker"]["healthy"] = age < _vl_store.STALE_AFTER_SECONDS
         else:
             # Nothing in flight is not evidence of a dead worker, only that
             # there is nothing to do. Reported as unknown, not unhealthy.
             health["worker"]["healthy"] = None
+
+        # THE QUEUE. Jobs are never failed for waiting (see store.is_stale), so
+        # this is where a backlog - or a worker that is not running - shows up.
+        queued = await vision_lab_analyses.count_documents({"status": vl.STATUS_QUEUED})
+        oldest = await vision_lab_analyses.find(
+            {"status": vl.STATUS_QUEUED}).sort("created_at", 1).to_list(length=1)
+        waited = None
+        if oldest and isinstance(oldest[0].get("created_at"), datetime):
+            created = oldest[0]["created_at"]
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            waited = round((now - created).total_seconds(), 1)
+        health["queue"] = {"queued": queued, "oldest_waiting_seconds": waited}
+
+        # Jobs waiting and nobody working on any of them: no worker is running.
+        # This is the failure that used to be silent - now it is a red health
+        # check rather than a pile of jobs that never finish.
+        if (not claimed and queued and waited is not None
+                and waited > VL_QUEUE_UNCLAIMED_ALERT_SECONDS):
+            health["worker"]["healthy"] = False
+            health["worker"]["reason"] = "jobs_waiting_unclaimed"
     except Exception as err:  # noqa: BLE001 - health must never 500
         logger.warning("vision lab health probe failed: %s", err)
     return health
@@ -1689,7 +1717,9 @@ async def analyze_creative(body: VisionAnalyzeRequest):
             analysis_id=existing["_id"], creative_id=existing.get("creative_id", ""),
             status=existing["status"], created_at=existing.get("created_at"),
             idempotent_hit=True, poll_url=_vision_poll_url(existing["_id"]),
-            suggested_poll_interval_seconds=VISION_LAB_POLL_SECONDS)
+            suggested_poll_interval_seconds=VISION_LAB_POLL_SECONDS,
+            # A finished analysis has a frame to show; a queued one does not yet.
+            thumbnail_url=_vision_thumbnail_url(existing))
 
     analysis_id = _vl_store.new_analysis_id()
     doc = await vision_lab_store.create(analysis_id=analysis_id, request=body,
@@ -1903,7 +1933,41 @@ def _sign_images(report: dict) -> dict:
         report["thumbnails"] = [
             {**item, "image_url": _vl_heatmap.signed_url(item.get("object_key"))}
             for item in thumbnails]
+
+    poster = report.get("poster") or {}
+    if poster.get("object_key"):
+        report["poster"] = {**poster,
+                            "image_url": _vl_heatmap.signed_url(poster["object_key"])}
     return report
+
+
+def _vision_thumbnail_url(doc: Optional[dict]) -> Optional[str]:
+    """A signed preview of the creative for /analyze and /history, or None.
+
+    Only a finished analysis has frames to show. The poster - the heatmap's
+    frame without the overlay, which skips black openings and fades - is the
+    answer. Analyses made before posters existed fall back to the strip frame
+    nearest the heatmap's moment: the same scene or close to it. The first
+    frame is the last resort, because ads so often open on black.
+    """
+    if not doc or doc.get("status") not in (vl.STATUS_COMPLETED, vl.STATUS_SKIPPED):
+        return None
+    report = doc.get("report") or {}
+    key = (report.get("poster") or {}).get("object_key")
+    if not key:
+        strip = [t for t in (report.get("thumbnails") or []) if t.get("object_key")]
+        if strip:
+            when = (report.get("heatmap") or {}).get("frame_time")
+            chosen = (strip[0] if when is None
+                      else min(strip, key=lambda t: abs((t.get("t") or 0) - when)))
+            key = chosen["object_key"]
+    if not key:
+        return None
+    try:
+        from vision_lab import heatmap as _vl_heatmap
+    except Exception:  # noqa: BLE001 - OpenCV missing must not break a response
+        return None
+    return _vl_heatmap.signed_url(key)
 
 
 @app.get("/api/vision-lab/analysis/{analysis_id}",
@@ -1958,6 +2022,7 @@ async def vision_lab_history(
         "division": doc.get("division"),
         "status": doc.get("status"),
         "overall_score": ((doc.get("report") or {}).get("overall") or {}).get("score"),
+        "thumbnail_url": _vision_thumbnail_url(doc),
         "created_at": doc.get("created_at"),
     } for doc in docs]
     return {"items": items, "count": len(items)}

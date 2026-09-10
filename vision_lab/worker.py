@@ -48,7 +48,7 @@ load_dotenv()
 # Import after load_dotenv so module-level env reads see the .env values.
 from motor.motor_asyncio import AsyncIOMotorClient  # noqa: E402
 
-from . import ACTIVE_STATUSES, ANALYSIS_PROVIDER_ERROR  # noqa: E402
+from . import ANALYSIS_PROVIDER_ERROR, CLAIMED_STATUSES  # noqa: E402
 from . import framework as fw  # noqa: E402
 from . import pipeline as pl  # noqa: E402
 from . import stubs  # noqa: E402
@@ -189,7 +189,7 @@ async def reap_stale(store: AnalysisStore) -> int:
     """
     reaped = 0
     docs = await store.collection.find(
-        {"status": {"$in": list(ACTIVE_STATUSES)}}).to_list(length=200)
+        {"status": {"$in": list(CLAIMED_STATUSES)}}).to_list(length=200)
     for doc in docs:
         if is_stale(doc):
             await store.mark_interrupted(doc["_id"])

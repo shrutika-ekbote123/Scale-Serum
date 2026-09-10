@@ -118,6 +118,14 @@ def build_report(doc: dict, *, media: dict, summary: dict, heatmaps: dict,
             "peaks": hero.get("peaks") or [],
         },
         "thumbnails": heatmaps.get("strip") or [],
+        # A plain frame of the ad, no overlay - what thumbnail_url points to on
+        # /analyze and /history. The heatmap's frame, so never a black opening.
+        # Signed at read time like every other image.
+        "poster": {
+            "frame_time": (heatmaps.get("poster") or {}).get("frame_time"),
+            "object_key": (heatmaps.get("poster") or {}).get("object_key"),
+            "image_url": None,
+        },
         "key_moments": key_moments or [],
         # `signals` is dropped from the response: six numbers per frame over 120
         # frames is a large payload nothing renders. It stays in the stored

@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "ScaleSerum - Vision Lab",
-    "description": "LAST UPDATED 2026-09-10 - adds 00 Upload a video (POST /api/vision-lab/upload).\nIMPORTING OVER AN OLDER COPY: choose REPLACE, not 'Import as copy' - a copy is\nwhat produces the [CONFLICT] duplicate in the sidebar. Replacing clears the\nvariables; re-enter api_key (creative_url is filled in by 00).\n\n\n\nAI-predicted attention analysis for ad creatives.\n\nRUN THE FOLDERS IN ORDER. `1 Happy path` submits a creative, polls it to completion and then exercises history, rescore and delete. `2 Failure paths` covers every reason code the UI branches on, and is the half that catches regressions - the happy path rarely breaks quietly.\n\nBEFORE YOU RUN\n1. Set `base_url` (http://localhost:3001 locally).\n2. Set `api_key` to the API_KEY from .env. It ships BLANK - never commit a real one.\n3. EITHER run `00 Upload a video` (pick a file in its Body tab - it fills\n   `creative_url` for you), OR set `creative_url` to a presigned GET link:\n     python scripts/presign.py vision-lab-test/Ads1.mp4\n   The four uploaded ads are Ads1.mp4, Ad2.mp4, Ad3.mp4 and Ad4.mp4 under\n   s3://aife-media-prod/vision-lab-test/.\n4. The service needs VL_ENABLED=true and the URL's host in VL_ALLOWED_URL_HOSTS.\n5. vision-worker must be running, or every poll stays at `queued`:\n     python -m vision_lab.worker\n   RESTART THE WORKER, not just the API, after any change to vision_lab/ - the\n   pipeline runs in the worker process.\n\n6. Collection Runner -> set Delay to 3000 ms. That is what paces the polling loop.\n\nMILESTONE D: the report is complete. `stub` is false, all six scores are real, and\nthe transcript, the 15 triggers and the written recommendations are each either\npresent or state why they are absent.\n\nRequest 03 prints two things to the console that no assertion can judge for you:\n  EVIDENCE AUDIT - what the model tried to say and could not support.\n  MODEL INVENTED DEFECTS - anything it nominated that Python had not found.\nBoth should normally be small. Watch them; they are how you notice the\ninterpretation layer drifting.\n\nTranscription and interpretation are OPTIONAL. Without DEEPGRAM_API_KEY or\nGEMINI_API_KEY the analysis still completes with every measurement and every\nscore - the affected blocks say why they are missing. Folder 0 reports which of\nthem this server has.",
+    "description": "LAST UPDATED 2026-09-10 - adds 00 Upload a video (POST /api/vision-lab/upload).\nIMPORTING OVER AN OLDER COPY: choose REPLACE, not 'Import as copy' - a copy is\nwhat produces the [CONFLICT] duplicate in the sidebar. Replacing clears the\nvariables; re-enter api_key (creative_url is filled in by 00).\n\n\n\n\n\nAI-predicted attention analysis for ad creatives.\n\nRUN THE FOLDERS IN ORDER. `1 Happy path` submits a creative, polls it to completion and then exercises history, rescore and delete. `2 Failure paths` covers every reason code the UI branches on, and is the half that catches regressions - the happy path rarely breaks quietly.\n\nBEFORE YOU RUN\n1. Set `base_url` (http://localhost:3001 locally).\n2. Set `api_key` to the API_KEY from .env. It ships BLANK - never commit a real one.\n3. EITHER run `00 Upload a video` (pick a file in its Body tab - it fills\n   `creative_url` for you), OR set `creative_url` to a presigned GET link:\n     python scripts/presign.py vision-lab-test/Ads1.mp4\n   The four uploaded ads are Ads1.mp4, Ad2.mp4, Ad3.mp4 and Ad4.mp4 under\n   s3://aife-media-prod/vision-lab-test/.\n4. The service needs VL_ENABLED=true and the URL's host in VL_ALLOWED_URL_HOSTS.\n5. vision-worker must be running, or every poll stays at `queued`:\n     python -m vision_lab.worker\n   RESTART THE WORKER, not just the API, after any change to vision_lab/ - the\n   pipeline runs in the worker process.\n\n6. Collection Runner -> set Delay to 3000 ms. That is what paces the polling loop.\n\nMILESTONE D: the report is complete. `stub` is false, all six scores are real, and\nthe transcript, the 15 triggers and the written recommendations are each either\npresent or state why they are absent.\n\nRequest 03 prints two things to the console that no assertion can judge for you:\n  EVIDENCE AUDIT - what the model tried to say and could not support.\n  MODEL INVENTED DEFECTS - anything it nominated that Python had not found.\nBoth should normally be small. Watch them; they are how you notice the\ninterpretation layer drifting.\n\nTranscription and interpretation are OPTIONAL. Without DEEPGRAM_API_KEY or\nGEMINI_API_KEY the analysis still completes with every measurement and every\nscore - the affected blocks say why they are missing. Folder 0 reports which of\nthem this server has.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -275,7 +275,14 @@
                   "pm.test('responded fast - this must not do the work', () =>",
                   "  pm.expect(pm.response.responseTime).to.be.below(5000));",
                   "pm.collectionVariables.set('analysis_id', body.analysis_id);",
-                  "pm.collectionVariables.set('poll_url', body.poll_url);"
+                  "pm.collectionVariables.set('poll_url', body.poll_url);",
+                  "",
+                  "// thumbnail_url is always present. For a NEW submission it is null: nothing",
+                  "// has been downloaded yet, so there is no frame to show.",
+                  "pm.test('carries a thumbnail_url field', () => pm.expect(body).to.have.property('thumbnail_url'));",
+                  "if (body.status === 'queued') {",
+                  "  pm.test('no thumbnail yet for a new submission', () => pm.expect(body.thumbnail_url).to.be.null);",
+                  "}"
                 ]
               }
             }
@@ -569,7 +576,15 @@
                   "const body = pm.response.json();",
                   "pm.test('recognised as the same creative', () => pm.expect(body.idempotent_hit).to.be.true);",
                   "pm.test('same analysis, no second job', () =>",
-                  "  pm.expect(body.analysis_id).to.eql(pm.collectionVariables.get('analysis_id')));"
+                  "  pm.expect(body.analysis_id).to.eql(pm.collectionVariables.get('analysis_id')));",
+                  "",
+                  "// By now the analysis has finished (03 waited for it), so the resubmission",
+                  "// returns a signed link to a plain frame of the ad.",
+                  "if (body.status === 'completed') {",
+                  "  pm.test('a finished analysis returns its thumbnail', () =>",
+                  "    pm.expect(body.thumbnail_url, 'thumbnail_url').to.be.a('string').and.include('X-Amz-Signature'));",
+                  "  console.log('thumbnail_url: ' + body.thumbnail_url);",
+                  "}"
                 ]
               }
             }
@@ -679,7 +694,13 @@
                   "pm.test('newest first', () => {",
                   "  const dates = body.items.map(i => new Date(i.created_at).getTime());",
                   "  pm.expect(dates).to.eql(dates.slice().sort((a,b) => b-a));",
-                  "});"
+                  "});",
+                  "",
+                  "pm.test('every row carries a thumbnail_url field', () =>",
+                  "  body.items.forEach(i => pm.expect(i).to.have.property('thumbnail_url')));",
+                  "pm.test('rows still in progress have no thumbnail yet', () =>",
+                  "  body.items.filter(i => i.status !== 'completed' && i.status !== 'skipped')",
+                  "            .forEach(i => pm.expect(i.thumbnail_url).to.be.null));"
                 ]
               }
             }
