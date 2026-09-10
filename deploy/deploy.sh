@@ -132,8 +132,10 @@ release() {
   fi
 
   # 'pm2 restart' fails if the process was never registered (first deploy, or the
-  # pm2 daemon was reset), so fall back to the ecosystem file already on the box —
-  # it is untracked, so 'git reset --hard' above leaves it alone.
+  # pm2 daemon was reset), so fall back to ecosystem.config.js. It is TRACKED, so
+  # 'git reset --hard' above has just set it to this commit's version - an edit
+  # made to it on the server does not survive a deploy. It declares both the API
+  # and the Vision Lab worker, so this path starts both.
   if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then
     log "Restarting pm2 process $PM2_NAME"
     pm2 restart "$PM2_NAME" --update-env
@@ -156,6 +158,49 @@ release() {
   pm2 save --force >/dev/null 2>&1 || true
 }
 
+# Restart the Vision Lab worker - a second pm2 process - onto the new code.
+#
+# Without this the worker keeps running the PREVIOUS release: the API moves on,
+# the worker does not, and a fix that lives in the worker ships and changes
+# nothing. It is found by WHAT IT RUNS (vision_lab.worker), not by name, so a
+# worker started by hand under any name is restarted too.
+#
+# Deliberately never fatal and never a start: a missing worker is a warning, and
+# this does not launch one - a second worker the operator did not ask for would
+# double the CPU load on a small box.
+restart_workers() {
+  local ids
+  ids="$(pm2 jlist 2>/dev/null | "$VENV/bin/python" -c '
+import json, sys
+try:
+    procs = json.load(sys.stdin)
+except Exception:
+    procs = []
+found = []
+for p in procs:
+    env = p.get("pm2_env") or {}
+    args = env.get("args") or []
+    if isinstance(args, str):
+        args = [args]
+    runs = " ".join([str(env.get("pm_exec_path") or "")] + [str(a) for a in args])
+    if "vision_lab.worker" in runs or "vision_lab/worker" in runs:
+        found.append(str(p.get("pm_id")))
+print(" ".join(found))
+' 2>/dev/null || true)"
+
+  if [ -z "$ids" ]; then
+    log "No Vision Lab worker is registered in pm2 - nothing to restart"
+    echo "WARNING: Vision Lab analyses will stay queued until a worker runs. Start it once with:" >&2
+    echo "         pm2 start ecosystem.config.js --only vision-worker && pm2 save" >&2
+    return 0
+  fi
+  for id in $ids; do
+    log "Restarting Vision Lab worker (pm2 id $id)"
+    pm2 restart "$id" --update-env || echo "WARNING: could not restart worker $id" >&2
+  done
+  pm2 save --force >/dev/null 2>&1 || true
+}
+
 # Poll /health until it answers or we run out of retries.
 healthy() {
   local i
@@ -173,6 +218,10 @@ release "$DEPLOY_SHA"
 
 if healthy; then
   log "Healthy. Deployed: $(git log -1 --oneline)"
+  # Only now, with the API confirmed healthy: a rollback below never has to
+  # undo a worker restart, so API and worker can never end up on different
+  # releases because of a failed deploy.
+  restart_workers
   curl --silent --max-time 5 "$HEALTH_URL" || true
   echo
   pm2 list
