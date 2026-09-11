@@ -1,0 +1,189 @@
+{
+  "info": {
+    "_postman_id": "c3a9e2f1-7b4d-4e8a-9f21-ainextaction01",
+    "name": "ScaleSerum — AI Suggested Next Action",
+    "description": "The card on the Lead Journey page: urgency, recommendation, reason.\n\nSETUP\n1. Start the API:  PORT=3002 python -m uvicorn app:app --host 127.0.0.1 --port 3002\n2. Open this collection's Variables tab and paste your API_KEY (from .env) into `apiKey`.\n3. Run the whole collection (Run collection) — every request carries assertions. Run it IN ORDER: request 4 expects the wording cached by request 3.\n\nWHAT TO LOOK FOR\nThe two screenshot leads: the Rs 299 buyer must NOT be told to onboard (it is an entry ticket), and the 5-form lead must be high urgency and uncontacted.\n\nThe tier override requests (8-12) use a made-up brand id, so they never change a real brand's recommendations.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {"key": "key", "value": "X-API-Key", "type": "string"},
+      {"key": "value", "value": "{{apiKey}}", "type": "string"},
+      {"key": "in", "value": "header", "type": "string"}
+    ]
+  },
+  "variable": [
+    {"key": "baseUrl", "value": "http://127.0.0.1:3002", "type": "string"},
+    {"key": "apiKey", "value": "", "type": "string", "description": "PASTE YOUR KEY HERE. Value of API_KEY in .env."},
+    {"key": "leadNew", "value": "b510926c-84d5-4cd5-964d-55fd8b80857e", "type": "string", "description": "Screenshot lead: 5 webinar forms, never contacted, not paid."},
+    {"key": "leadEntryBuyer", "value": "fedf2d55-4171-4411-b26e-b1b91d06c0fd", "type": "string", "description": "Screenshot lead: paid Rs 299 (webinar ticket)."},
+    {"key": "brandLawtorney", "value": "bee79bff-d5f6-4220-a7d4-7a04bf173e59", "type": "string"},
+    {"key": "brandTest", "value": "00000000-0000-4000-8000-0000000000aa", "type": "string", "description": "Made-up brand for override round-trips. Never a real brand."}
+  ],
+  "item": [
+    {
+      "name": "0. Health (no auth required)",
+      "request": {"auth": {"type": "noauth"}, "method": "GET", "header": [],
+        "url": {"raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"]}},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200 OK', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "pm.test('feature available', () => pm.expect(b.ai_suggested_next_action.available).to.eql(true));",
+        "pm.test('storage configured (needed for caching and overrides)', () => pm.expect(b.ai_suggested_next_action.storage).to.eql('configured'));"
+      ]}}]
+    },
+    {
+      "name": "1. Auth — wrong key returns 401",
+      "request": {
+        "auth": {"type": "apikey", "apikey": [
+          {"key": "key", "value": "X-API-Key", "type": "string"},
+          {"key": "value", "value": "definitely-wrong", "type": "string"},
+          {"key": "in", "value": "header", "type": "string"}]},
+        "method": "GET", "header": [],
+        "url": {"raw": "{{baseUrl}}/api/ai-suggested-next-action/{{leadNew}}", "host": ["{{baseUrl}}"],
+          "path": ["api", "ai-suggested-next-action", "{{leadNew}}"]}},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('401', () => pm.response.to.have.status(401));"
+      ]}}]
+    },
+    {
+      "name": "2. Screenshot lead — 5 forms, never contacted",
+      "request": {"method": "GET", "header": [],
+        "url": {"raw": "{{baseUrl}}/api/ai-suggested-next-action/{{leadNew}}", "host": ["{{baseUrl}}"],
+          "path": ["api", "ai-suggested-next-action", "{{leadNew}}"]},
+        "description": "Expect a call recommendation. Urgency depends on how long ago the last form was, measured against this brand's own buying window, so it drops from high over time."},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200 OK', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "const card = b.ai_suggested_next_action;",
+        "pm.test('available', () => pm.expect(b.availability.available).to.eql(true));",
+        "pm.test('three-part card', () => pm.expect(Object.keys(card).sort()).to.eql(['reason','recommendation','urgency']));",
+        "pm.test('urgency label', () => pm.expect(['HIGH URGENCY','MEDIUM URGENCY','LOW URGENCY']).to.include(card.urgency.label));",
+        "pm.test('recommendation has title and text', () => { pm.expect(card.recommendation.title).to.be.a('string').and.not.empty; pm.expect(card.recommendation.text).to.be.a('string').and.not.empty; });",
+        "pm.test('reason cites evidence', () => pm.expect(card.reason.evidence.length).to.be.above(0));",
+        "pm.test('not converted, not contacted', () => { pm.expect(b.lead_state.converted).to.eql(false); pm.expect(b.lead_state.contacted).to.eql(false); });",
+        "pm.test('flags two phone numbers', () => pm.expect(b.data_flags).to.include('multiple_phone_numbers'));",
+        "pm.test('wording has no gendered pronoun', () => pm.expect(card.recommendation.text + ' ' + card.reason.text).to.not.match(/\\b(he|she|him|her|his|hers)\\b/i));"
+      ]}}]
+    },
+    {
+      "name": "3. Screenshot lead — paid Rs 299 (entry ticket), refresh",
+      "request": {"method": "GET", "header": [],
+        "url": {"raw": "{{baseUrl}}/api/ai-suggested-next-action/{{leadEntryBuyer}}?refresh=true", "host": ["{{baseUrl}}"],
+          "path": ["api", "ai-suggested-next-action", "{{leadEntryBuyer}}"],
+          "query": [{"key": "refresh", "value": "true"}]},
+        "description": "The prototype told this lead to onboard. A Rs 299 ticket is the entry offer, so the right move is to pitch the main programme."},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200 OK', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "pm.test('bought entry tier only', () => pm.expect(b.lead_state.highest_tier).to.eql('entry'));",
+        "pm.test('not told to onboard', () => pm.expect(b.ai_suggested_next_action.recommendation.action_type).to.not.eql('onboard'));",
+        "pm.test('fresh wording, not cached', () => pm.expect(b.cached).to.eql(false));",
+        "pm.test('tiers inferred', () => pm.expect(['inferred','override']).to.include(b.tiers.source));"
+      ]}}]
+    },
+    {
+      "name": "4. Same lead again — wording served from cache",
+      "request": {"method": "GET", "header": [],
+        "url": {"raw": "{{baseUrl}}/api/ai-suggested-next-action/{{leadEntryBuyer}}", "host": ["{{baseUrl}}"],
+          "path": ["api", "ai-suggested-next-action", "{{leadEntryBuyer}}"]}},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200 OK', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "if (b.wording.source === 'template') {",
+        "  console.warn('Request 3 fell back to template wording (not cached by design): ' + b.wording.fallback_reason);",
+        "} else {",
+        "  pm.test('cached', () => { pm.expect(b.cached).to.eql(true); pm.expect(b.wording.source).to.eql('cache'); });",
+        "}"
+      ]}}]
+    },
+    {
+      "name": "5. Unavailable — lead not found",
+      "request": {"method": "GET", "header": [],
+        "url": {"raw": "{{baseUrl}}/api/ai-suggested-next-action/00000000-0000-0000-0000-000000000000", "host": ["{{baseUrl}}"],
+          "path": ["api", "ai-suggested-next-action", "00000000-0000-0000-0000-000000000000"]}},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200 (house convention)', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "pm.test('lead_not_found', () => pm.expect(b.availability.reason).to.eql('lead_not_found'));",
+        "pm.test('no invented card', () => pm.expect(b.ai_suggested_next_action).to.eql(null));"
+      ]}}]
+    },
+    {
+      "name": "6. Unavailable — not a UUID",
+      "request": {"method": "GET", "header": [],
+        "url": {"raw": "{{baseUrl}}/api/ai-suggested-next-action/not-a-lead", "host": ["{{baseUrl}}"],
+          "path": ["api", "ai-suggested-next-action", "not-a-lead"]}},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "pm.test('lead_not_found', () => pm.expect(pm.response.json().availability.reason).to.eql('lead_not_found'));"
+      ]}}]
+    },
+    {
+      "name": "7. Tiers — Lawtorney inferred ladder",
+      "request": {"method": "GET", "header": [],
+        "url": {"raw": "{{baseUrl}}/api/ai-suggested-next-action/tiers/{{brandLawtorney}}", "host": ["{{baseUrl}}"],
+          "path": ["api", "ai-suggested-next-action", "tiers", "{{brandLawtorney}}"]}},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200 OK', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "pm.test('inferred has entry and core', () => pm.expect(b.inferred.map(t => t.kind)).to.include.members(['entry','core']));",
+        "pm.test('Rs 299 sits in the entry band', () => { const e = b.inferred.find(t => t.kind === 'entry'); pm.expect(e.min_amount).to.be.at.most(299); pm.expect(e.max_amount).to.be.at.least(299); });"
+      ]}}]
+    },
+    {
+      "name": "8. Tiers — overlapping override is refused (422)",
+      "request": {"method": "PUT", "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\"tiers\": [{\"kind\": \"entry\", \"min_amount\": 0, \"max_amount\": 500}, {\"kind\": \"core\", \"min_amount\": 400, \"max_amount\": 900}]}"},
+        "url": {"raw": "{{baseUrl}}/api/ai-suggested-next-action/tiers/{{brandTest}}", "host": ["{{baseUrl}}"],
+          "path": ["api", "ai-suggested-next-action", "tiers", "{{brandTest}}"]}},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('422', () => pm.response.to.have.status(422));",
+        "pm.test('says overlap', () => pm.expect(pm.response.json().detail).to.match(/overlap/));"
+      ]}}]
+    },
+    {
+      "name": "9. Tiers — set an override",
+      "request": {"method": "PUT", "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\"tiers\": [{\"kind\": \"entry\", \"min_amount\": 0, \"max_amount\": 999, \"product_label\": \"Webinar ticket\"}, {\"kind\": \"core\", \"min_amount\": 1000, \"max_amount\": 200000, \"product_label\": \"Director programme\"}]}"},
+        "url": {"raw": "{{baseUrl}}/api/ai-suggested-next-action/tiers/{{brandTest}}", "host": ["{{baseUrl}}"],
+          "path": ["api", "ai-suggested-next-action", "tiers", "{{brandTest}}"]}},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200 OK', () => pm.response.to.have.status(200));",
+        "pm.test('override active', () => pm.expect(pm.response.json().active_source).to.eql('override'));"
+      ]}}]
+    },
+    {
+      "name": "10. Tiers — read back the override",
+      "request": {"method": "GET", "header": [],
+        "url": {"raw": "{{baseUrl}}/api/ai-suggested-next-action/tiers/{{brandTest}}", "host": ["{{baseUrl}}"],
+          "path": ["api", "ai-suggested-next-action", "tiers", "{{brandTest}}"]}},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200 OK', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "pm.test('override returned', () => { pm.expect(b.active_source).to.eql('override'); pm.expect(b.override.length).to.eql(2); });"
+      ]}}]
+    },
+    {
+      "name": "11. Tiers — delete the override",
+      "request": {"method": "DELETE", "header": [],
+        "url": {"raw": "{{baseUrl}}/api/ai-suggested-next-action/tiers/{{brandTest}}", "host": ["{{baseUrl}}"],
+          "path": ["api", "ai-suggested-next-action", "tiers", "{{brandTest}}"]}},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200 OK', () => pm.response.to.have.status(200));",
+        "pm.test('deleted', () => pm.expect(pm.response.json().deleted).to.eql(true));"
+      ]}}]
+    },
+    {
+      "name": "12. Tiers — back to none for a brand with no payments",
+      "request": {"method": "GET", "header": [],
+        "url": {"raw": "{{baseUrl}}/api/ai-suggested-next-action/tiers/{{brandTest}}", "host": ["{{baseUrl}}"],
+          "path": ["api", "ai-suggested-next-action", "tiers", "{{brandTest}}"]}},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200 OK', () => pm.response.to.have.status(200));",
+        "pm.test('no override, nothing to infer', () => { const b = pm.response.json(); pm.expect(b.override).to.eql(null); pm.expect(b.active_source).to.eql('none'); });"
+      ]}}]
+    }
+  ]
+}

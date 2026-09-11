@@ -1,0 +1,129 @@
+{
+  "framework_version": "na_v1",
+  "_comment": "Rulebook for the AI Suggested Next Action. The rules in rules.py read these numbers; change them here, bump framework_version, and every cached wording is regenerated because the version is part of the fingerprint.",
+
+  "urgency": {
+    "high":   {"label": "HIGH URGENCY",   "act_within_hours": 24},
+    "medium": {"label": "MEDIUM URGENCY", "act_within_hours": 72},
+    "low":    {"label": "LOW URGENCY",    "act_within_hours": 168}
+  },
+
+  "windows": {
+    "_comment": "How long this brand's leads usually take to pay after their first form. Measured per brand from real data; these defaults apply only when a brand has fewer than min_converters paying leads and no usable Brand Brain sales cycle.",
+    "min_converters": 20,
+    "default_p50_hours": 96,
+    "default_p75_hours": 360,
+    "cache_ttl_seconds": 900
+  },
+
+  "thresholds": {
+    "repeat_registration_forms": 3,
+    "whatsapp_reply_window_hours": 72,
+    "sql_follow_up_high_days": 3,
+    "entry_pitch_high_days": 7,
+    "entry_pitch_medium_days": 30,
+    "onboarding_medium_days": 7
+  },
+
+  "tiers": {
+    "_comment": "Automatic product-tier inference. Paid amounts are sorted and split into price bands wherever the next amount is more than band_split_ratio times the previous one. Bands with too few payments are merged into their neighbour. A per-brand override replaces all of this.",
+    "band_split_ratio": 3.0,
+    "min_band_payments": 5,
+    "min_band_share": 0.02,
+    "cache_ttl_seconds": 900
+  },
+
+  "actions": {
+    "insufficient_data": {
+      "channel": "none",
+      "title": "Review this lead manually",
+      "text": "There is not enough activity on this lead to recommend a specific action yet.",
+      "reason_headline": "No usable activity recorded",
+      "reason_text": "This lead has no touchpoints or calls that the system can rely on."
+    },
+    "disqualify": {
+      "channel": "none",
+      "title": "No action needed",
+      "text": "Deprioritise this lead unless they get back in touch.",
+      "reason_headline": "Lead marked as not relevant",
+      "reason_text": "The lead is marked {disqualified_by}, so it should not take up the team's time."
+    },
+    "reply_whatsapp": {
+      "channel": "whatsapp",
+      "title": "Reply on WhatsApp now",
+      "text": "The lead messaged on WhatsApp and is waiting for a reply. Respond before doing anything else.",
+      "reason_headline": "Unanswered WhatsApp message",
+      "reason_text": "The last WhatsApp message came from the lead on {whatsapp_last_message_date} and has not been answered."
+    },
+    "callback": {
+      "channel": "phone",
+      "title": "Call back as promised",
+      "text": "Make the callback the lead asked for.",
+      "reason_headline": "Callback requested",
+      "reason_text": "The last call on {last_call_date} ended with a callback request."
+    },
+    "onboard": {
+      "channel": "phone",
+      "title": "Send onboarding details",
+      "text": "Welcome the lead to {core_product} and make sure onboarding is complete.",
+      "reason_headline": "Recently bought the main offer",
+      "reason_text": "The lead paid {last_core_amount} on {last_core_date}. Focus shifts to onboarding."
+    },
+    "nurture_next_tier": {
+      "channel": "phone",
+      "title": "Plan a retention or upgrade conversation",
+      "text": "Check in on progress and, where it fits, introduce the next offer.",
+      "reason_headline": "Existing customer",
+      "reason_text": "The lead bought {core_product} on {last_core_date}. Focus shifts to retention and expansion."
+    },
+    "pitch_core_offer": {
+      "channel": "phone",
+      "title": "Call to pitch the main offer",
+      "text": "The lead bought the entry offer. Call to confirm they attended and introduce {core_product}.",
+      "reason_headline": "Bought the entry offer only",
+      "reason_text": "The lead paid {last_entry_amount} for {entry_product} on {last_entry_date} and has not bought the main offer."
+    },
+    "follow_up_objection": {
+      "channel": "phone",
+      "title": "Follow up on the last call",
+      "text": "Call back and address the concerns raised on the last call.",
+      "reason_headline": "Qualified on a call but has not paid",
+      "reason_text": "The last call on {last_call_date} was marked {last_call_disposition}, but no payment has followed."
+    },
+    "retry_contact": {
+      "channel": "whatsapp",
+      "title": "Send a WhatsApp, then retry the call",
+      "text": "The last call went unanswered. Send a short WhatsApp message and try calling again.",
+      "reason_headline": "Could not reach the lead",
+      "reason_text": "The last call on {last_call_date} was not answered."
+    },
+    "call_probe_repeat": {
+      "channel": "phone",
+      "title": "Call within 24 hours",
+      "text": "Call to find out what is stopping them from signing up.",
+      "reason_headline": "Keeps registering but has not bought",
+      "reason_text": "The lead submitted {form_count} forms between {first_touch_date} and {last_touch_date} and has not been contacted."
+    },
+    "call_now": {
+      "channel": "phone",
+      "title": "Call within 24 hours",
+      "text": "Call while the lead's interest is fresh.",
+      "reason_headline": "New lead that has not been worked yet",
+      "reason_text": "The lead was last active on {last_touch_date} and has not been contacted."
+    },
+    "follow_up": {
+      "channel": "whatsapp",
+      "title": "Follow up on WhatsApp, then call",
+      "text": "Send a follow-up message and call if they respond.",
+      "reason_headline": "Interest is cooling",
+      "reason_text": "The lead was last active on {last_touch_date} and has not been contacted."
+    },
+    "re_engage": {
+      "channel": "whatsapp",
+      "title": "Add to a re-engagement campaign",
+      "text": "Add this lead to a WhatsApp or email nurture campaign instead of calling.",
+      "reason_headline": "Lead has gone quiet",
+      "reason_text": "The lead has been inactive since {last_touch_date}."
+    }
+  }
+}
