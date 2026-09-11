@@ -84,8 +84,14 @@ if MONGODB_URI:
     # larger than the report and only /rescore reads it.
     vision_lab_analyses = mongo_client[MONGODB_DB]["vision_lab_analyses"]
     vision_lab_measurements = mongo_client[MONGODB_DB]["vision_lab_measurements"]
+    # AI Suggested Next Action: cached card wording per lead, and each brand's
+    # product-tier override. Both keyed by _id - see ai_suggested_next_action/store.py.
+    ai_suggested_next_actions = mongo_client[MONGODB_DB]["ai_suggested_next_actions"]
+    ai_suggested_next_action_tiers = mongo_client[MONGODB_DB]["ai_suggested_next_action_tiers"]
 else:
     mongo_client = None
+    ai_suggested_next_actions = None
+    ai_suggested_next_action_tiers = None
     brand_brains = None
     sales_call_analyses = None
     sales_call_transcripts_raw = None
@@ -245,6 +251,32 @@ vision_lab_store = None
 if VISION_LAB_AVAILABLE and vision_lab_analyses is not None:
     vision_lab_store = _vl_store.AnalysisStore(
         vision_lab_analyses, measurements_collection=vision_lab_measurements)
+
+
+# ---------------------------------------------------------------------------
+# AI Suggested Next Action (the card on the Lead Journey page).
+#
+# Imported defensively for the same reason as the features above. It reads
+# Postgres through the purchase-probability connection pool, so a box without
+# psycopg loses this endpoint (availability.available=false) and nothing else.
+# Without MongoDB it still works; it just re-words every request and cannot
+# store tier overrides.
+# ---------------------------------------------------------------------------
+AI_NEXT_ACTION_AVAILABLE = True
+try:
+    import ai_suggested_next_action as _na
+    from ai_suggested_next_action import data as _na_data
+
+    _na.load_framework()              # fail loudly here rather than per request
+except Exception as _na_import_error:  # pragma: no cover - import-time only
+    AI_NEXT_ACTION_AVAILABLE = False
+    _NA_IMPORT_ERROR = repr(_na_import_error)
+    print(f"WARNING: ai_suggested_next_action unavailable - {_NA_IMPORT_ERROR}")
+
+ai_next_action_store = None
+if AI_NEXT_ACTION_AVAILABLE and ai_suggested_next_actions is not None:
+    ai_next_action_store = _na.NextActionStore(
+        ai_suggested_next_actions, ai_suggested_next_action_tiers)
 
 
 @asynccontextmanager
@@ -540,6 +572,10 @@ async def health():
             "storage": "configured" if sales_call_store is not None else "not_configured",
         },
         "vision_lab": await _vision_lab_health(),
+        "ai_suggested_next_action": {
+            "available": AI_NEXT_ACTION_AVAILABLE,
+            "storage": "configured" if ai_next_action_store is not None else "not_configured",
+        },
     }
 
 
@@ -2195,6 +2231,165 @@ async def delete_vision_analysis(analysis_id: str):
     logger.info("vision lab analysis deleted [analysis_id=%s images=%d]",
                 analysis_id, removed)
     return {"deleted": True, "analysis_id": analysis_id, "images_removed": removed}
+
+
+# ---------------------------------------------------------------------------
+# AI Suggested Next Action
+#
+# GET /api/ai-suggested-next-action/{lead_id} returns the card: urgency,
+# recommendation and reason. SYNCHRONOUS - the rules run in milliseconds and the
+# wording call is capped at NA_LLM_TIMEOUT_MS, falling back to fixed template
+# wording, so the backend never has to poll.
+#
+# The tier endpoints let a brand correct the automatic product-tier inference
+# ("Rs 299 is the entry ticket, Rs 30,000 is the programme").
+# ---------------------------------------------------------------------------
+NA_TAG = "AI Suggested Next Action"
+
+
+class NextActionTierIn(BaseModel):
+    name: Optional[str] = None
+    kind: str = Field(..., description="entry | core | premium")
+    min_amount: float
+    max_amount: float
+    product_label: Optional[str] = Field(
+        None, description="How to refer to this tier's product in a sentence.")
+
+
+class NextActionTiersRequest(BaseModel):
+    tiers: List[NextActionTierIn]
+
+
+def _require_next_action():
+    if not AI_NEXT_ACTION_AVAILABLE:
+        raise HTTPException(status_code=503,
+                            detail="The AI Suggested Next Action is not available on this server.")
+
+
+def _require_next_action_store():
+    _require_next_action()
+    if ai_next_action_store is None:
+        raise HTTPException(status_code=503, detail=(
+            "Tier override storage is not configured. Set MONGODB_URI in the environment."))
+
+
+def _require_uuid(value: str, name: str) -> None:
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"{name} must be a UUID")
+
+
+async def _na_call_analysis(analysis_id: str) -> Optional[dict]:
+    """A completed sales-call analysis, joined through sales_calls.analysis_id -
+    the analyses themselves are not stored with a lead_id."""
+    if sales_call_analyses is None or not analysis_id:
+        return None
+    try:
+        return await sales_call_analyses.find_one({"_id": analysis_id, "status": "completed"})
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _na_deps():
+    """Everything the service needs from this process. The package owns no
+    clients or connections of its own."""
+    return _na.SuggestDeps(
+        run_sync=run_in_threadpool,
+        load_lead=_na_data.load_lead_context,
+        brand_payments=_na_data.brand_payments,
+        brand_windows=_na_data.brand_windows,
+        load_brand_brain=_load_brand_brain,          # the existing helper, reused
+        load_call_analysis=_na_call_analysis,
+        store=ai_next_action_store,
+        llm_client=client,
+        llm_model=GEMINI_MODEL,
+    )
+
+
+@app.get("/api/ai-suggested-next-action/{lead_id}", tags=[NA_TAG],
+         summary="AI Suggested Next Action for one lead",
+         dependencies=[Depends(require_api_key)])
+async def ai_suggested_next_action(
+    lead_id: str,
+    refresh: bool = Query(False, description="Ignore cached wording and write it again."),
+    brand_brain_id: Optional[str] = Query(
+        None, description="Override the Brand Brain used for voice and context. Normally "
+                          "omitted - it is resolved from the lead's brand."),
+):
+    """The card: `ai_suggested_next_action.urgency`, `.recommendation`, `.reason`.
+
+    Always HTTP 200. A lead that cannot be read returns `availability.available:
+    false` with a reason (`lead_not_found`, `database_unavailable`,
+    `feature_unavailable`) and `ai_suggested_next_action: null` - never an
+    invented recommendation. `fallback: true` means the wording is the fixed
+    template because the model was unavailable or its output failed validation;
+    the action and urgency are identical either way.
+    """
+    if not AI_NEXT_ACTION_AVAILABLE:
+        return {
+            "lead_id": lead_id, "brand_id": None, "brand_name": None,
+            "ai_suggested_next_action": None, "lead_state": None, "tiers": None,
+            "conversion_window": None, "confidence": None, "data_flags": [],
+            "wording": None, "versions": None, "generated_at": None, "cached": False,
+            "availability": {"available": False, "reason": "feature_unavailable",
+                             "message": "The AI Suggested Next Action is not available on this server."},
+            "fallback": True,
+        }
+    return await _na.suggest_next_action(lead_id, _na_deps(), refresh=refresh,
+                                         brand_brain_id=brand_brain_id)
+
+
+@app.get("/api/ai-suggested-next-action/tiers/{brand_id}", tags=[NA_TAG],
+         summary="Product tiers used for a brand (override and inferred)",
+         dependencies=[Depends(require_api_key)])
+async def ai_suggested_next_action_tiers_get(brand_id: str):
+    """`active_source` says which tiers the recommendations use right now:
+    `override` when the brand has set its own, otherwise `inferred` (or `none`
+    when the brand has no payments yet). `inferred` is always returned so a brand
+    can see what the system would guess before overriding it."""
+    _require_next_action()
+    _require_uuid(brand_id, "brand_id")
+    payments = await run_in_threadpool(_na_data.brand_payments, brand_id)
+    inferred = _na.infer_tiers(payments, _na.load_framework()["tiers"])
+    override = (await ai_next_action_store.get_tier_override(brand_id)
+                if ai_next_action_store is not None else None)
+    return {
+        "brand_id": brand_id,
+        "active_source": "override" if override else ("inferred" if inferred else "none"),
+        "override": override.get("tiers") if override else None,
+        "override_updated_at": override.get("updated_at") if override else None,
+        "inferred": inferred,
+    }
+
+
+@app.put("/api/ai-suggested-next-action/tiers/{brand_id}", tags=[NA_TAG],
+         summary="Set a brand's product-tier override",
+         dependencies=[Depends(require_api_key)])
+async def ai_suggested_next_action_tiers_put(brand_id: str, body: NextActionTiersRequest):
+    """Replaces the brand's override. Ranges must not overlap. Cached card wording
+    refreshes by itself: tiers change the facts, and the facts are fingerprinted."""
+    _require_next_action_store()
+    _require_uuid(brand_id, "brand_id")
+    try:
+        tiers = _na.validate_override([dict(t) for t in body.tiers])
+    except ValueError as err:
+        raise HTTPException(status_code=422, detail=str(err))
+    doc = await ai_next_action_store.set_tier_override(brand_id, tiers)
+    logger.info("next-action tier override set [brand_id=%s tiers=%d]", brand_id, len(tiers))
+    return {"brand_id": brand_id, "active_source": "override", "override": doc["tiers"],
+            "override_updated_at": doc["updated_at"]}
+
+
+@app.delete("/api/ai-suggested-next-action/tiers/{brand_id}", tags=[NA_TAG],
+            summary="Remove a brand's tier override (back to inferred)",
+            dependencies=[Depends(require_api_key)])
+async def ai_suggested_next_action_tiers_delete(brand_id: str):
+    _require_next_action_store()
+    _require_uuid(brand_id, "brand_id")
+    deleted = await ai_next_action_store.delete_tier_override(brand_id)
+    return {"brand_id": brand_id, "deleted": deleted}
+
 
 if __name__ == "__main__":
     import uvicorn
