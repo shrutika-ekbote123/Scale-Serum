@@ -21,7 +21,8 @@ API contract for the backend team: **`../SALES_CALL_ANALYZER.md`**.
 | `scoring.py` | criterion → stage → overall, in Python only |
 | `report.py` | Assembles the response. Renames and arranges; never rescores |
 | `store.py` | MongoDB persistence, idempotency, stale-job handling |
-| `pipeline.py` | Orchestration and the status machine |
+| `pipeline.py` | Orchestration, the status machine, and the per-run cost block |
+| `../billing/` | Shared: dated provider rates (`pricing.json`), channel-aware cost, date-range bill |
 | `sales_framework.json` | The six stages, their criteria, and every business value (all null) |
 | `signals_config.json` | Closed vocabularies for signals, techniques and pitch structures |
 

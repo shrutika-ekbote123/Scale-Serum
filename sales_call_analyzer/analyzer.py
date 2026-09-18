@@ -67,11 +67,15 @@ TEMPERATURE = float(os.environ.get("SCA_LLM_TEMPERATURE", 0.0))
 
 
 class AnalyzerError(Exception):
-    def __init__(self, reason: str, message: str, *, retryable: bool = False):
+    def __init__(self, reason: str, message: str, *, retryable: bool = False,
+                 meta: Optional[dict] = None):
         super().__init__(message)
         self.reason = reason
         self.message = message
         self.retryable = retryable
+        # Usage from attempts that were billed before the failure, so a failed
+        # analysis is still costed.
+        self.meta = meta or {}
 
 
 # =========================================================================== #
@@ -581,9 +585,24 @@ async def analyze(client, model: str, ctx: AnalysisContext,
     started = time.monotonic()
     attempts = 0
     last_error: Optional[Exception] = None
+    # Summed across attempts: a rejected first answer is billed like any other.
     usage: dict[str, Optional[int]] = {
         "input_tokens": None, "output_tokens": None,
         "thinking_tokens": None, "total_tokens": None, "cached_tokens": None}
+    model_version: Optional[str] = None
+
+    def usage_meta() -> dict:
+        return {
+            "llm_ms": int((time.monotonic() - started) * 1000),
+            "llm_model": model,
+            "llm_model_version": model_version,
+            "llm_attempts": attempts,
+            "llm_input_tokens": usage["input_tokens"],
+            "llm_output_tokens": usage["output_tokens"],
+            "llm_thinking_tokens": usage["thinking_tokens"],
+            "llm_total_tokens": usage["total_tokens"],
+            "llm_cached_tokens": usage["cached_tokens"],
+        }
 
     for attempt in range(2):
         attempts += 1
@@ -597,17 +616,23 @@ async def analyze(client, model: str, ctx: AnalysisContext,
                            attempts, type(err).__name__)
             continue
 
+        reported_version = getattr(response, "model_version", None)
+        if isinstance(reported_version, str) and reported_version:
+            model_version = reported_version
         meta = getattr(response, "usage_metadata", None)
         if meta is not None:
-            usage["input_tokens"] = getattr(meta, "prompt_token_count", None)
-            usage["output_tokens"] = getattr(meta, "candidates_token_count", None)
             # Gemini prices thinking tokens at the OUTPUT rate but reports them
             # separately from candidates_token_count, so a bill estimated from
             # output alone is too low. total_token_count is the provider's own
             # sum and is the number to reconcile a cost estimate against.
-            usage["thinking_tokens"] = getattr(meta, "thoughts_token_count", None)
-            usage["total_tokens"] = getattr(meta, "total_token_count", None)
-            usage["cached_tokens"] = getattr(meta, "cached_content_token_count", None)
+            for key, attr in (("input_tokens", "prompt_token_count"),
+                              ("output_tokens", "candidates_token_count"),
+                              ("thinking_tokens", "thoughts_token_count"),
+                              ("total_tokens", "total_token_count"),
+                              ("cached_tokens", "cached_content_token_count")):
+                value = getattr(meta, attr, None)
+                if isinstance(value, int) and not isinstance(value, bool):
+                    usage[key] = (usage[key] or 0) + value
 
         try:
             analysis = validate_output(_parse_json(response.text), cfg, signals)
@@ -620,22 +645,17 @@ async def analyze(client, model: str, ctx: AnalysisContext,
         return {
             "analysis": analysis,
             "meta": {
-                "llm_ms": int((time.monotonic() - started) * 1000),
-                "llm_model": model,
-                "llm_attempts": attempts,
+                **usage_meta(),
                 "prompt_version": PROMPT_VERSION,
                 "framework_version": cfg["framework_version"],
                 "signals_version": signals["signals_version"],
-                "llm_input_tokens": usage["input_tokens"],
-                "llm_output_tokens": usage["output_tokens"],
-                "llm_thinking_tokens": usage["thinking_tokens"],
-                "llm_total_tokens": usage["total_tokens"],
-                "llm_cached_tokens": usage["cached_tokens"],
             },
         }
 
     if isinstance(last_error, (ValueError, AnalyzerError)):
         raise AnalyzerError(ANALYSIS_INVALID_OUTPUT,
-                            "The analysis model did not return a usable result.")
+                            "The analysis model did not return a usable result.",
+                            meta=usage_meta())
     raise AnalyzerError(ANALYSIS_PROVIDER_ERROR,
-                        "The analysis model could not be reached.", retryable=True)
+                        "The analysis model could not be reached.", retryable=True,
+                        meta=usage_meta())

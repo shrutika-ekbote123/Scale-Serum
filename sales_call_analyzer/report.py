@@ -35,7 +35,11 @@ from .models import (
     NormalizedTranscript,
     Objection,
     PitchStructureAssessment,
+    AudioUsage,
     ProcessingInfo,
+    TokenUsage,
+    UsageBlock,
+    UsageCost,
     RepTechnique,
     SalesCallAnalysis,
     Scores,
@@ -160,8 +164,71 @@ def build_report(*, analysis_id: str, ctx: AnalysisContext,
         context_used=context_used,
         analysis_quality=quality,
         processing=processing,
+        usage=build_usage(processing),
         fallback=False,
     )
+
+
+def _round(value: Optional[float], places: int) -> Optional[float]:
+    return None if value is None else round(float(value), places)
+
+
+def _add(*values: Optional[int]) -> Optional[int]:
+    """None means "not reported", which is not zero - so all-None stays None."""
+    present = [v for v in values if v is not None]
+    return sum(present) if present else None
+
+
+def build_usage(processing: ProcessingInfo) -> UsageBlock:
+    """One readable summary of what this analysis consumed.
+
+    Includes the language-identification call. It is a genuine Gemini call with
+    a genuine bill, and leaving it out of a "total tokens" figure would be the
+    same mistake as ignoring thinking tokens.
+    """
+    analysis = TokenUsage(
+        input=processing.llm_input_tokens, output=processing.llm_output_tokens,
+        thinking=processing.llm_thinking_tokens, cached=processing.llm_cached_tokens,
+        total=processing.llm_total_tokens or _add(processing.llm_input_tokens,
+                                                  processing.llm_output_tokens,
+                                                  processing.llm_thinking_tokens))
+    language = TokenUsage(
+        input=processing.language_id_input_tokens,
+        output=processing.language_id_output_tokens,
+        thinking=processing.language_id_thinking_tokens,
+        cached=processing.language_id_cached_tokens,
+        total=_add(processing.language_id_input_tokens,
+                   processing.language_id_output_tokens,
+                   processing.language_id_thinking_tokens))
+
+    tokens: dict[str, Any] = {"analysis": analysis}
+    if language.total is not None:
+        tokens["language_id"] = language
+
+    seconds = processing.audio_seconds_submitted
+    cost = processing.cost
+    deepgram = cost.deepgram if cost else None
+    billed_seconds = deepgram.billed_seconds if deepgram else None
+    audio = AudioUsage(
+        seconds=_round(seconds, 3),
+        minutes=_round(seconds / 60 if seconds is not None else None, 2),
+        billed_channels=processing.billed_channels,
+        billed_seconds=_round(billed_seconds, 3),
+        billed_minutes=_round(billed_seconds / 60 if billed_seconds is not None else None, 2),
+        billed_hours=_round(billed_seconds / 3600 if billed_seconds is not None else None, 4))
+
+    return UsageBlock(
+        tokens=tokens,
+        total_tokens=_add(analysis.total, language.total),
+        audio=audio,
+        cost=UsageCost(
+            deepgram_usd=deepgram.usd if deepgram else None,
+            gemini_usd=cost.gemini.usd if cost else None,
+            total_usd=cost.total_usd if cost else None,
+            total_inr=cost.total_inr if cost else None,
+            usd_to_inr=cost.usd_to_inr if cost else None,
+            estimated=cost.estimated if cost else True,
+            rates_confirmed=cost.confirmed if cost else None))
 
 
 def build_failed_report(*, analysis_id: str, call_id: str, reason: str,
@@ -194,5 +261,7 @@ def build_failed_report(*, analysis_id: str, call_id: str, reason: str,
         transcript=transcript,
         context_used=context_used or ContextUsed(),
         processing=processing or ProcessingInfo(),
+        # A failed analysis still spent money, so it still reports what it used.
+        usage=build_usage(processing or ProcessingInfo()),
         fallback=True,
     )

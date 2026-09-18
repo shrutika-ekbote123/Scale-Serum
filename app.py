@@ -22,7 +22,7 @@ import functools
 import logging
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 from urllib.parse import urlparse
 
@@ -156,7 +156,16 @@ async def require_api_key(provided: Optional[str] = Security(api_key_header)):
 # several, so an unset key degrades that feature and says so.
 # ---------------------------------------------------------------------------
 DEEPGRAM_API_KEY = os.environ.get("DEEPGRAM_API_KEY")
-DEEPGRAM_MODEL = os.environ.get("DEEPGRAM_MODEL", "nova-2")
+
+# Language identification: off | shadow | on. Off by default - it costs a Gemini
+# call per analysis, so it is switched on deliberately, and "shadow" records what
+# it would have chosen without acting on it. See sales_call_analyzer/pipeline.py.
+SCA_LANGUAGE_ID = os.environ.get("SCA_LANGUAGE_ID", "off").strip().lower()
+# The identifier runs on the same Gemini model as the analysis unless pinned.
+SCA_LANGUAGE_ID_MODEL = os.environ.get("SCA_LANGUAGE_ID_MODEL") or GEMINI_MODEL
+# Kept in step with the transcription client below, which owns the real
+# default; billing prices whatever was actually sent.
+DEEPGRAM_MODEL = os.environ.get("DEEPGRAM_MODEL", "nova-3")
 
 SALES_CALL_ANALYZER_AVAILABLE = True
 try:
@@ -167,9 +176,15 @@ try:
     from sales_call_analyzer import scoring as _sca_scoring
     from sales_call_analyzer import store as _sca_store
     from sales_call_analyzer.models import AnalyzeAccepted, AnalyzeRequest
+    from transcription import audio_slice as _sca_audio_slice
+    from transcription import language_id as _sca_language_id
 
     _sca_framework.load_framework()   # fail loudly here rather than per request
     _sca_framework.load_signals()
+
+    # One source of truth for the model name. The client owns the default, and
+    # every analysis is priced on what was actually sent, so these must not drift.
+    DEEPGRAM_MODEL = _sca_deepgram.DEEPGRAM_MODEL
 except Exception as _sca_import_error:  # pragma: no cover - import-time only
     SALES_CALL_ANALYZER_AVAILABLE = False
     _SCA_IMPORT_ERROR = repr(_sca_import_error)
@@ -187,6 +202,18 @@ except Exception as _sca_import_error:  # pragma: no cover - import-time only
         analysis_id: str = ""
         call_id: str = ""
         status: str = "unavailable"
+
+# Provider pricing, for cost estimates and the bill endpoint. Guarded on its own:
+# a typo in pricing.json disables billing, never the analyzer itself.
+BILLING_AVAILABLE = True
+BILLING_ERROR = None
+try:
+    import billing as _billing
+    _billing.load_pricing()           # fail loudly here rather than per request
+except Exception as _billing_error:  # pragma: no cover - import-time only
+    BILLING_AVAILABLE = False
+    BILLING_ERROR = repr(_billing_error)
+    print(f"WARNING: billing unavailable - {BILLING_ERROR}")
 
 sales_call_store = None
 if SALES_CALL_ANALYZER_AVAILABLE and sales_call_analyses is not None:
@@ -570,6 +597,15 @@ async def health():
             "available": SALES_CALL_ANALYZER_AVAILABLE,
             "transcription": "configured" if DEEPGRAM_API_KEY else "not_configured",
             "storage": "configured" if sales_call_store is not None else "not_configured",
+            # ffmpeg only trims a sample for language identification. Without it
+            # the whole (short) recording is sent instead, so this is degraded,
+            # not broken.
+            "language_id": {
+                "mode": SCA_LANGUAGE_ID,
+                "model": SCA_LANGUAGE_ID_MODEL if SCA_LANGUAGE_ID != "off" else None,
+                "ffmpeg": (_sca_audio_slice.available()
+                           if SALES_CALL_ANALYZER_AVAILABLE else None),
+            },
         },
         "vision_lab": await _vision_lab_health(),
         "ai_suggested_next_action": {
@@ -1360,6 +1396,17 @@ async def _sca_resolve_brand_ref(lead_id: str) -> dict:
     return await run_in_threadpool(_pp_brand_ref, lead_id)
 
 
+async def _sca_identify_language(audio: bytes, *, mime_type: str = "audio/mpeg"):
+    """Which languages are spoken in this audio. Uses the shared Gemini client.
+
+    Deepgram's own detector answers "en" for a Marathi customer because the rep
+    does most of the talking in English, so this asks a model that reports the
+    share of each language instead of one winner.
+    """
+    return await _sca_language_id.identify(client, SCA_LANGUAGE_ID_MODEL, audio,
+                                           mime_type=mime_type)
+
+
 def _sales_call_deps():
     """Everything the pipeline needs from this process. The analyzer package owns
     no clients or connections of its own."""
@@ -1371,6 +1418,9 @@ def _sales_call_deps():
         load_brand_brain=_load_brand_brain,          # the existing helper, reused
         resolve_brand_ref=_sca_resolve_brand_ref,
         transcription_model=DEEPGRAM_MODEL,
+        identify_language=_sca_identify_language,
+        fetch_audio=_sca_deepgram.fetch_audio,
+        language_id_mode=SCA_LANGUAGE_ID,
     )
 
 
@@ -1559,6 +1609,94 @@ async def rescore_sales_call_analysis(analysis_id: str):
     logger.info("analysis rescored [analysis_id=%s framework_version=%s]",
                 analysis_id, cfg["framework_version"])
     return report
+
+
+# ---------------------------------------------------------------------------
+# Provider bill for a date range.
+#
+# An ESTIMATE from billing/pricing.json and the usage each analysis recorded -
+# Deepgram audio x billed channels, Gemini tokens including thinking and
+# rejected attempts. Every unconfirmed rate or assumption is listed in
+# `disclaimers`. Returns no transcript, name or phone number.
+# ---------------------------------------------------------------------------
+BILLING_TIMEZONES = {"ist": timezone(timedelta(hours=5, minutes=30), "IST"),
+                     "utc": timezone.utc}
+BILLING_MAX_RANGE_DAYS = 366
+
+
+def _add_one_month(moment: datetime) -> datetime:
+    year, month = (moment.year + 1, 1) if moment.month == 12 else (moment.year, moment.month + 1)
+    day = min(moment.day, [31, 29 if (year % 4 == 0 and (year % 100 or year % 400 == 0))
+                           else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1])
+    return moment.replace(year=year, month=month, day=day)
+
+
+def _parse_billing_bound(value: str, tz: timezone, name: str) -> datetime:
+    """A date means midnight in `tz`; a datetime without an offset is read in
+    `tz` too; a datetime with an offset is taken as given."""
+    raw = (value or "").strip()
+    try:
+        if len(raw) == 10:
+            day = date.fromisoformat(raw)
+            return datetime(day.year, day.month, day.day, tzinfo=tz)
+        moment = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(status_code=422,
+                            detail=f"`{name}` must be YYYY-MM-DD or an ISO datetime.")
+    return moment if moment.tzinfo else moment.replace(tzinfo=tz)
+
+
+@app.get("/api/sales-calls/billing/summary", dependencies=[Depends(require_api_key)])
+async def sales_call_billing_summary(
+        from_: str = Query(..., alias="from",
+                           description="Start, inclusive. YYYY-MM-DD or ISO datetime."),
+        to: Optional[str] = Query(None, description="End, exclusive. Defaults to one month after `from`."),
+        tz: str = Query("ist", description="ist (default) or utc. Applies to plain dates."),
+        status: Optional[str] = Query(None, description="Comma-separated: completed,failed,skipped")):
+    """Estimated Deepgram + Gemini spend for analyses created in [from, to).
+
+    For a calendar month: from=2026-09-01&to=2026-10-01. Use tz=utc to compare
+    against Deepgram's usage export, which is in UTC.
+    """
+    _require_sales_call_analyzer()
+    if not BILLING_AVAILABLE:
+        raise HTTPException(status_code=503,
+                            detail="Billing is not available: the pricing config failed to load.")
+
+    zone = BILLING_TIMEZONES.get((tz or "").strip().lower())
+    if zone is None:
+        raise HTTPException(status_code=422, detail="`tz` must be ist or utc.")
+    start = _parse_billing_bound(from_, zone, "from")
+    end = _parse_billing_bound(to, zone, "to") if to else _add_one_month(start)
+    if end <= start:
+        raise HTTPException(status_code=422, detail="`to` must be after `from`.")
+    if end - start > timedelta(days=BILLING_MAX_RANGE_DAYS):
+        raise HTTPException(status_code=422,
+                            detail=f"The range cannot exceed {BILLING_MAX_RANGE_DAYS} days.")
+
+    statuses = None
+    if status:
+        statuses = [s.strip().lower() for s in status.split(",") if s.strip()]
+        unknown = [s for s in statuses if s not in sca.TERMINAL_STATUSES]
+        if unknown:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unknown status {unknown}. Use: {', '.join(sorted(sca.TERMINAL_STATUSES))}.")
+
+    # Mongo stores naive UTC datetimes.
+    start_utc = start.astimezone(timezone.utc).replace(tzinfo=None)
+    end_utc = end.astimezone(timezone.utc).replace(tzinfo=None)
+    docs = await sales_call_store.billing_docs(start_utc, end_utc, statuses)
+
+    summary = _billing.summarize(docs, _billing.load_pricing())
+    return {
+        "range": {"from": start.isoformat(), "to": end.isoformat(),
+                  "from_utc": start.astimezone(timezone.utc).isoformat(),
+                  "to_utc": end.astimezone(timezone.utc).isoformat(),
+                  "timezone": (tz or "ist").strip().lower(), "end_exclusive": True,
+                  "statuses": statuses or sorted(sca.TERMINAL_STATUSES)},
+        **summary,
+    }
 
 
 # ---------------------------------------------------------------------------

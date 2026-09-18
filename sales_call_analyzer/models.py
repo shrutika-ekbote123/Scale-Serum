@@ -16,6 +16,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
+from billing.cost import CostBreakdown
+
 
 # =========================================================================== #
 # Request
@@ -170,6 +172,7 @@ class NormalizedTranscript(BaseModel):
     speaker_count: int = 0
     segment_count: int = 0
     duration_seconds: Optional[float] = None
+    channels_processed: Optional[int] = None  # channels Deepgram processed, for billing
     word_count: int = 0
     speakers: list[TranscriptSpeaker] = Field(default_factory=list)
     segments: list[TranscriptSegment] = Field(default_factory=list)
@@ -371,8 +374,88 @@ class ProcessingInfo(BaseModel):
     llm_thinking_tokens: Optional[int] = None
     llm_total_tokens: Optional[int] = None
     llm_cached_tokens: Optional[int] = None
+    # The model the provider says answered; gemini-flash-latest is an alias.
+    llm_model_version: Optional[str] = None
+    # How the transcript was obtained - decides whether Deepgram was billed.
+    transcript_strategy: Optional[str] = None
+    # Channels Deepgram processed (and bills). Without multichannel a stereo file
+    # is merged and reports 1 - this is not the channel count of the file.
+    channels_processed: Optional[int] = None
+    multichannel_requested: bool = False
+    billed_channels: Optional[int] = None
+    transcription_language_sent: Optional[str] = None
+
+    # Language decision. Deepgram's own detector answers "en" for a call whose
+    # customer speaks Marathi, so the language is either supplied by the caller
+    # or identified from the audio, and the report says which.
+    language_basis: Optional[str] = None            # LANGUAGE_BASIS_*
+    language_detected: Optional[str] = None         # dominant non-English language heard
+    language_detection_ok: Optional[bool] = None
+    language_detection_reason: Optional[str] = None
+    language_detection_shares: list[dict] = Field(default_factory=list)
+    language_detection_ms: Optional[int] = None
+    language_decision: Optional[str] = None         # covered_by_multi | regional_code | ...
+    # Shadow mode: what detection WOULD have sent, with nothing acted on.
+    language_shadow_choice: Optional[str] = None
+    # Billed inside the Gemini cost block; kept separately so the price of
+    # detection can be seen on its own.
+    language_id_input_tokens: Optional[int] = None
+    language_id_output_tokens: Optional[int] = None
+    language_id_thinking_tokens: Optional[int] = None
+    language_id_cached_tokens: Optional[int] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    # Estimated provider cost of this run, and of earlier runs of the same
+    # analysis_id, so a retry never erases what was already spent.
+    cost: Optional[CostBreakdown] = None
+    cost_prior_runs: list[CostBreakdown] = Field(default_factory=list)
+
+
+class TokenUsage(BaseModel):
+    """Tokens for one LLM step. `cached` is already included in `input`, which
+    is how Gemini reports it and how it is priced."""
+    input: Optional[int] = None
+    output: Optional[int] = None
+    thinking: Optional[int] = None      # billed at the OUTPUT rate
+    cached: Optional[int] = None
+    total: Optional[int] = None
+
+
+class AudioUsage(BaseModel):
+    """Deepgram has no tokens - it bills processed audio. Minutes and hours are
+    given because that is what Deepgram's console and usage CSV show."""
+    seconds: Optional[float] = None
+    minutes: Optional[float] = None
+    billed_channels: Optional[int] = None
+    billed_seconds: Optional[float] = None
+    billed_minutes: Optional[float] = None
+    billed_hours: Optional[float] = None
+
+
+class UsageCost(BaseModel):
+    """The money, flattened. The full working stays in `processing.cost`."""
+    deepgram_usd: Optional[float] = None
+    gemini_usd: Optional[float] = None
+    total_usd: Optional[float] = None
+    total_inr: Optional[float] = None
+    usd_to_inr: Optional[float] = None
+    estimated: bool = True
+    rates_confirmed: Optional[bool] = None    # every rate and rule confirmed?
+
+
+class UsageBlock(BaseModel):
+    """What this analysis consumed, in one place.
+
+    Every number here is derived from `processing`; nothing new is recorded and
+    no extra provider call is made. It exists because answering "how many tokens
+    did this call use, and what did it cost" previously meant adding up fields
+    from three different places - and missing the language-identification call,
+    which is a real Gemini call with a real bill.
+    """
+    tokens: dict[str, Any] = Field(default_factory=dict)   # analysis | language_id blocks
+    total_tokens: Optional[int] = None                     # every LLM step, added up
+    audio: AudioUsage = Field(default_factory=AudioUsage)
+    cost: UsageCost = Field(default_factory=UsageCost)
 
 
 class ContextUsed(BaseModel):
@@ -422,6 +505,8 @@ class SalesCallAnalysis(BaseModel):
     updated_at: Optional[datetime] = None
 
     call: Optional[CallSummaryBlock] = None
+    # What the analysis consumed: tokens, audio, money. Derived from processing.
+    usage: Optional[UsageBlock] = None
     scores: Optional[Scores] = None
     stage_evaluations: list[StageEvaluation] = Field(default_factory=list)
 

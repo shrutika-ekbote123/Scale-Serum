@@ -11,6 +11,9 @@ DESIGN NOTES
     * Every failure ends as a stated reason with scores=null. A failed analysis
       never becomes a neutral scorecard, because a sales manager cannot tell an
       invented evaluation from a real one.
+    * Every exit - completed, skipped, failed - carries an estimated cost block
+      (`processing.cost`). A failed analysis still cost money, and a pricing bug
+      must never fail an analysis, so the estimate is best-effort.
     * A concurrency gate bounds how many calls are in flight at once. This runs
       in a single pm2 fork process alongside onboarding and Script Lab; two
       simultaneous 40-minute transcriptions must not starve them.
@@ -27,8 +30,16 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional
 
+import billing
+from transcription import audio_slice as _audio_slice
+from transcription import deepgram_client as _dg_client
+from transcription import language_id as _language_id
+
 from . import (
     ANALYSIS_FAILED_AFTER_TRANSCRIPTION,
+    LANGUAGE_BASIS_DEFAULT,
+    LANGUAGE_BASIS_DETECTED,
+    LANGUAGE_BASIS_SUPPLIED,
     ANALYSIS_INVALID_OUTPUT,
     NO_AUDIO_OR_TRANSCRIPT,
     REASON_TEXT,
@@ -64,6 +75,18 @@ logger = logging.getLogger("sales_call_analyzer.pipeline")
 MAX_CONCURRENT_JOBS = int(os.environ.get("SCA_MAX_CONCURRENT_JOBS", 2))
 _GATE: Optional[asyncio.Semaphore] = None
 
+STRATEGY_REUSED = "reused_stored_transcript"
+STRATEGY_FALLBACK_TEXT = "supplied_text_after_transcription_failure"
+
+# Transcription failures that happen before Deepgram does any billable work.
+# Any other failure while transcribing may or may not have been billed.
+_TRANSCRIPTION_NOT_BILLED = {
+    NO_AUDIO_OR_TRANSCRIPT,
+    TRANSCRIPTION_NOT_CONFIGURED,
+    _dg_client.TRANSCRIPTION_RATE_LIMITED,
+    _dg_client.AUDIO_TOO_LARGE,
+}
+
 
 def gate() -> asyncio.Semaphore:
     """Lazily created so the semaphore binds to the running event loop."""
@@ -88,6 +111,11 @@ class PipelineDeps:
     resolve_brand_ref: Callable[[str], Awaitable[dict]] = None
     transcription_model: str = "unknown"
     store_raw_transcript: Optional[bool] = None
+    # Language identification. Injected, so a test needs neither Gemini nor
+    # ffmpeg, and an unconfigured server simply skips the step.
+    identify_language: Optional[Callable[..., Awaitable[Any]]] = None
+    fetch_audio: Optional[Callable[[str], Awaitable[tuple]]] = None
+    language_id_mode: Optional[str] = None
     extra: dict = field(default_factory=dict)
 
 
@@ -105,9 +133,104 @@ class PipelineFailure(Exception):
 # =========================================================================== #
 # Transcription
 # =========================================================================== #
+# How much say the language detector gets.
+#
+#   off      never runs. The default until it has been watched on live calls.
+#   shadow   runs and records what it WOULD have chosen, changes nothing. This
+#            is how we find out whether it is right without risking a report.
+#   on       acts on the answer.
+#
+# Default off on purpose, like VL_ENABLED: merging a feature that costs money
+# per call must land inert, and be switched on deliberately.
+LANGUAGE_ID_OFF = "off"
+LANGUAGE_ID_SHADOW = "shadow"
+LANGUAGE_ID_ON = "on"
+LANGUAGE_ID_MODE = os.environ.get("SCA_LANGUAGE_ID", LANGUAGE_ID_OFF).strip().lower()
+
+# Without ffmpeg the whole recording is sent instead of a window, so it is only
+# worth doing for a short file - 8 MB is roughly 8 minutes of speech MP3.
+LANGUAGE_ID_MAX_WHOLE_BYTES = int(os.environ.get("SCA_LANGUAGE_ID_MAX_WHOLE_BYTES", 8 * 1024 * 1024))
+
+REASON_LANGUAGE_ID_AUDIO_UNAVAILABLE = "language_id_audio_unavailable"
+REASON_LANGUAGE_ID_FILE_TOO_LONG = "language_id_file_too_long_for_whole_file_check"
+
+
+def _requested_language(request: AnalyzeRequest) -> Optional[str]:
+    """The language this request asks Deepgram for, before server defaults."""
+    language = request.options.language_hint
+    if not language and request.transcript:
+        language = request.transcript.language
+    return language
+
+
+async def _decide_language(request: AnalyzeRequest, deps: PipelineDeps,
+                           processing: ProcessingInfo,
+                           analysis_id: str) -> Optional[str]:
+    """Which language to ask Deepgram for. None means the server default.
+
+    Order: what the caller told us, then what the audio sounds like, then the
+    default. The caller wins because a rep who has just had the conversation is
+    a better source than any detector.
+
+    Never raises. Every failure here leaves the default in place, because a
+    wrong-but-complete transcript beats a failed analysis.
+    """
+    hint = _requested_language(request)
+    if hint:
+        processing.language_basis = LANGUAGE_BASIS_SUPPLIED
+        return hint
+
+    processing.language_basis = LANGUAGE_BASIS_DEFAULT
+    mode = (deps.language_id_mode or LANGUAGE_ID_MODE or LANGUAGE_ID_OFF).strip().lower()
+    if mode == LANGUAGE_ID_OFF or not deps.identify_language or not deps.fetch_audio:
+        return None
+
+    try:
+        audio, content_type = await deps.fetch_audio(request.audio.url)
+    except Exception as err:  # noqa: BLE001 - Deepgram may still reach the URL itself
+        logger.warning("language identification could not fetch the audio "
+                       "[analysis_id=%s]: %s", analysis_id, type(err).__name__)
+        processing.language_detection_reason = REASON_LANGUAGE_ID_AUDIO_UNAVAILABLE
+        return None
+
+    mime = request.audio.mime_type or content_type or "audio/mpeg"
+    sample = await _audio_slice.window(audio)
+    sample_mime = "audio/mpeg"
+    if not sample:
+        # No ffmpeg. The whole file answers the same question, but it is priced
+        # by length, so only a short recording is worth sending.
+        if len(audio) > LANGUAGE_ID_MAX_WHOLE_BYTES:
+            processing.language_detection_reason = REASON_LANGUAGE_ID_FILE_TOO_LONG
+            return None
+        sample, sample_mime = audio, mime
+
+    decision = await deps.identify_language(sample, mime_type=sample_mime)
+    _merge_meta(processing, decision.as_meta())
+    if not decision.ok:
+        return None
+
+    language, why = _dg_client.language_for(decision.dominant_non_english)
+    processing.language_decision = why
+    if language is None:
+        return None
+
+    if mode != LANGUAGE_ID_ON:
+        # Shadow: record the choice, change nothing.
+        processing.language_shadow_choice = language
+        logger.info("language id would have used %s [analysis_id=%s, mode=shadow]",
+                    language, analysis_id)
+        return None
+
+    processing.language_basis = LANGUAGE_BASIS_DETECTED
+    logger.info("language id chose %s [analysis_id=%s]", language, analysis_id)
+    return language
+
+
 async def resolve_transcript(request: AnalyzeRequest, deps: PipelineDeps,
                              analysis_id: str,
-                             stored: Optional[dict] = None) -> tuple[NormalizedTranscript, str]:
+                             stored: Optional[dict] = None,
+                             processing: Optional[ProcessingInfo] = None,
+                             ) -> tuple[NormalizedTranscript, str]:
     """Produce the normalised transcript. Returns (transcript, strategy).
 
     A transcript already produced for this call short-circuits everything: an
@@ -118,7 +241,7 @@ async def resolve_transcript(request: AnalyzeRequest, deps: PipelineDeps,
         # Reuse the transcription, never the role resolution: the CRM names in
         # THIS request may differ from the ones the earlier run had.
         return (transcript_mod.clear_role_annotations(NormalizedTranscript(**stored)),
-                "reused_stored_transcript")
+                STRATEGY_REUSED)
 
     strategy, _why = transcript_mod.select_input_strategy(request.audio, request.transcript)
 
@@ -134,9 +257,11 @@ async def resolve_transcript(request: AnalyzeRequest, deps: PipelineDeps,
     # Audio. If transcription fails but a plain-text transcript was also
     # supplied, degrade to it rather than losing the call entirely.
     await deps.store.set_status(analysis_id, STATUS_TRANSCRIBING)
-    language = request.options.language_hint
-    if not language and request.transcript:
-        language = request.transcript.language
+    processing = processing if processing is not None else ProcessingInfo()
+    language = await _decide_language(request, deps, processing, analysis_id)
+    # What was actually sent, which is what billing prices: multi is charged at
+    # the multilingual rate.
+    processing.transcription_language_sent = _dg_client.effective_language(language)
     try:
         raw = await deps.transcribe(request.audio.url,
                                     mime_type=request.audio.mime_type,
@@ -146,7 +271,7 @@ async def resolve_transcript(request: AnalyzeRequest, deps: PipelineDeps,
             logger.warning("transcription failed (%s); falling back to the supplied "
                            "text transcript [analysis_id=%s]", err.reason, analysis_id)
             return (transcript_mod.from_supplied_text(request.transcript),
-                    "supplied_text_after_transcription_failure")
+                    STRATEGY_FALLBACK_TEXT)
         raise PipelineFailure(err.reason, err.message) from err
 
     await deps.store.save_raw_transcript(analysis_id, raw,
@@ -154,7 +279,94 @@ async def resolve_transcript(request: AnalyzeRequest, deps: PipelineDeps,
                                                   if request.options.store_raw_transcript is not None
                                                   else deps.store_raw_transcript))
     return transcript_mod.from_deepgram(
-        raw, language_hint=request.options.language_hint), strategy
+        raw, language_hint=processing.transcription_language_sent), strategy
+
+
+# =========================================================================== #
+# Cost
+# =========================================================================== #
+def _merge_meta(processing: ProcessingInfo, meta: Optional[dict]) -> None:
+    for key, value in (meta or {}).items():
+        if hasattr(processing, key):
+            setattr(processing, key, value)
+
+
+async def _prior_costs(store: AnalysisStore, analysis_id: str) -> list:
+    """A re-run of the same analysis_id must not erase what the earlier run spent."""
+    try:
+        doc = await store.get(analysis_id)
+    except Exception:  # noqa: BLE001 - cost history is never worth failing a run
+        return []
+    prior = (doc or {}).get("processing") or {}
+    runs = list(prior.get("cost_prior_runs") or [])
+    if prior.get("cost"):
+        runs.append(prior["cost"])
+    out = []
+    for raw in runs:
+        try:
+            out.append(billing.CostBreakdown(**raw))
+        except Exception:  # noqa: BLE001
+            logger.warning("skipping unreadable prior cost block [analysis_id=%s]", analysis_id)
+    return out
+
+
+def _transcription_outcome(processing: ProcessingInfo,
+                           failure_reason: Optional[str]) -> tuple[str, Optional[str]]:
+    """Was Deepgram billed for this run? (outcome, reason)."""
+    strategy = processing.transcript_strategy
+    if strategy == transcript_mod.STRATEGY_TRANSCRIBE_AUDIO:
+        return billing.CHARGED, None
+    if strategy == STRATEGY_REUSED:
+        return billing.NOT_CHARGED, billing.REASON_REUSED_TRANSCRIPT
+    if strategy in (transcript_mod.STRATEGY_USE_SUPPLIED_STRUCTURED,
+                    transcript_mod.STRATEGY_USE_SUPPLIED_TEXT):
+        return billing.NOT_CHARGED, billing.REASON_SUPPLIED_TRANSCRIPT
+    if strategy == STRATEGY_FALLBACK_TEXT:
+        return billing.CHARGE_UNKNOWN, billing.REASON_TRANSCRIPTION_FAILED_UNKNOWN
+    if strategy is None and failure_reason and failure_reason not in _TRANSCRIPTION_NOT_BILLED:
+        # Deepgram was called and errored. A timeout or provider error can still
+        # be billed on their side, so this is unknown rather than zero.
+        return billing.CHARGE_UNKNOWN, billing.REASON_TRANSCRIPTION_FAILED_UNKNOWN
+    return billing.NOT_CHARGED, billing.REASON_NO_TRANSCRIPTION
+
+
+def _attach_cost(processing: ProcessingInfo, failure_reason: Optional[str] = None) -> None:
+    """Estimated provider cost for this run. Best-effort: never fails the analysis."""
+    try:
+        pricing = billing.load_pricing()
+        outcome, reason = _transcription_outcome(processing, failure_reason)
+        at = processing.started_at
+        deepgram = billing.deepgram_cost(
+            pricing, outcome=outcome, reason=reason,
+            model=processing.transcription_model,
+            audio_seconds=processing.audio_seconds_submitted,
+            channels_processed=processing.channels_processed,
+            multichannel_requested=processing.multichannel_requested,
+            language_sent=processing.transcription_language_sent, at=at)
+        # Language identification is a Gemini call on the same model, so it is
+        # folded into the same block rather than going quietly unbilled. The
+        # per-step token counts stay on `processing` for anyone checking.
+        def _total(analysis: Optional[int], language: Optional[int]) -> Optional[int]:
+            present = [v for v in (analysis, language) if v is not None]
+            return sum(present) if present else None
+
+        gemini = billing.gemini_cost(
+            pricing, model_requested=processing.llm_model,
+            model_version=processing.llm_model_version,
+            attempts=processing.llm_attempts + (1 if processing.language_detection_ms else 0),
+            input_tokens=_total(processing.llm_input_tokens,
+                                processing.language_id_input_tokens),
+            output_tokens=_total(processing.llm_output_tokens,
+                                 processing.language_id_output_tokens),
+            thinking_tokens=_total(processing.llm_thinking_tokens,
+                                   processing.language_id_thinking_tokens),
+            cached_tokens=_total(processing.llm_cached_tokens,
+                                 processing.language_id_cached_tokens), at=at)
+        processing.billed_channels = deepgram.billed_channels
+        processing.cost = billing.combine(pricing, deepgram, gemini, at=at)
+    except Exception:  # noqa: BLE001 - a pricing bug must never fail an analysis
+        logger.exception("cost estimate failed; the analysis continues without one")
+        processing.cost = None
 
 
 # =========================================================================== #
@@ -193,18 +405,24 @@ async def _run(analysis_id: str, request: AnalyzeRequest, deps: PipelineDeps,
     ctx = None
     context_used = None
 
+    processing.cost_prior_runs = await _prior_costs(deps.store, analysis_id)
     await deps.store.increment_attempts(analysis_id)
 
     try:
         # ---- 1. transcript ------------------------------------------------
         stored = await deps.store.stored_transcript(request.call_id)
         t0 = time.monotonic()
-        transcript, strategy = await resolve_transcript(request, deps, analysis_id, stored)
-        if strategy != "reused_stored_transcript":
+        transcript, strategy = await resolve_transcript(request, deps, analysis_id, stored,
+                                                        processing)
+        processing.transcript_strategy = strategy
+        if strategy != STRATEGY_REUSED:
             processing.transcription_ms = int((time.monotonic() - t0) * 1000)
             processing.audio_seconds_submitted = (
                 transcript.duration_seconds
                 if strategy == transcript_mod.STRATEGY_TRANSCRIBE_AUDIO else None)
+        if strategy == transcript_mod.STRATEGY_TRANSCRIBE_AUDIO:
+            processing.channels_processed = transcript.channels_processed
+            processing.multichannel_requested = _dg_client.MULTICHANNEL
 
         if not transcript.segments:
             raise PipelineFailure(TRANSCRIPT_EMPTY, transcript=transcript)
@@ -256,6 +474,8 @@ async def _run(analysis_id: str, request: AnalyzeRequest, deps: PipelineDeps,
             outcome = await analyzer_mod.analyze(
                 deps.llm_client, deps.llm_model, ctx, transcript, cfg, signals, blocked)
         except analyzer_mod.AnalyzerError as err:
+            # Rejected and failed attempts were still billed; keep their usage.
+            _merge_meta(processing, err.meta)
             # The transcript survived and is already stored; say so, so a retry
             # is known to be cheap.
             raise PipelineFailure(
@@ -263,9 +483,7 @@ async def _run(analysis_id: str, request: AnalyzeRequest, deps: PipelineDeps,
                 if err.reason == ANALYSIS_INVALID_OUTPUT else err.reason,
                 err.message, transcript=transcript) from err
 
-        for key, value in (outcome["meta"] or {}).items():
-            if hasattr(processing, key):
-                setattr(processing, key, value)
+        _merge_meta(processing, outcome["meta"])
 
         # ---- 6. evidence, then scoring -------------------------------------
         await deps.store.set_status(analysis_id, STATUS_SCORING)
@@ -276,6 +494,7 @@ async def _run(analysis_id: str, request: AnalyzeRequest, deps: PipelineDeps,
         # ---- 7. report ------------------------------------------------------
         processing.total_ms = int((time.monotonic() - started) * 1000)
         processing.completed_at = datetime.now(timezone.utc)
+        _attach_cost(processing)
         report = report_mod.build_report(
             analysis_id=analysis_id, ctx=ctx, transcript=transcript,
             analysis=verified, scoring=scoring, signals=signals,
@@ -292,8 +511,9 @@ async def _run(analysis_id: str, request: AnalyzeRequest, deps: PipelineDeps,
             blocked=blocked,
             processing=processing.model_dump(mode="json"))
         logger.info("analysis complete [analysis_id=%s call_id=%s total_ms=%s "
-                    "criteria_scored=%s]", analysis_id, request.call_id,
-                    processing.total_ms, scoring["counts"]["criteria_scored"])
+                    "criteria_scored=%s cost_usd=%s]", analysis_id, request.call_id,
+                    processing.total_ms, scoring["counts"]["criteria_scored"],
+                    processing.cost.total_usd if processing.cost else None)
         return report
 
     except PipelineFailure as err:
@@ -312,7 +532,7 @@ def _is_degraded(transcript: NormalizedTranscript, strategy: str) -> bool:
     """Degraded means the analysis ran on less than it should have had."""
     return (not transcript.diarization_available
             or not transcript.timestamps_available
-            or strategy == "supplied_text_after_transcription_failure")
+            or strategy == STRATEGY_FALLBACK_TEXT)
 
 
 async def _finish_skipped(analysis_id, ctx, transcript, context_used, processing,
@@ -320,6 +540,7 @@ async def _finish_skipped(analysis_id, ctx, transcript, context_used, processing
     """Configured policy says this call is not evaluated. Not a failure: the
     transcript is real and is kept, there is simply no scorecard."""
     processing.total_ms = int((time.monotonic() - started) * 1000)
+    _attach_cost(processing)
     report = report_mod.build_failed_report(
         analysis_id=analysis_id, call_id=ctx.call_id, reason=reason,
         status=STATUS_SKIPPED, lead_id=ctx.lead_id, transcript=transcript,
@@ -336,6 +557,7 @@ async def _finish_skipped(analysis_id, ctx, transcript, context_used, processing
 async def _finish_failed(analysis_id, request, reason, message, transcript, ctx,
                          context_used, processing, deps: PipelineDeps, created_at, started):
     processing.total_ms = int((time.monotonic() - started) * 1000)
+    _attach_cost(processing, failure_reason=reason)
     # Keep the call card on a failure where we got far enough to assemble the
     # context: the UI can still show who was called and what the rep recorded.
     call_block = None

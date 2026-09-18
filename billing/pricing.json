@@ -1,0 +1,79 @@
+{
+  "pricing_version": "2026-09-15.1",
+  "basis": "Provider rates used to ESTIMATE what an analysis cost. Published rates were read from deepgram.com/pricing and ai.google.dev/gemini-api/docs/pricing on 2026-09-15. This is not a provider invoice.",
+  "how_to_change": "Edit a rate or add a new dated period, bump pricing_version, redeploy. Never edit a past period in place - add a new period with its own effective_from, so analyses already priced keep the rate that was in force when they ran. A rate that is not a confirmed published price must say confirmed: false, and every bill then says so.",
+  "currency": "USD",
+  "fx": {
+    "usd_to_inr": 88,
+    "fixed_rate": true,
+    "set_on": "2026-09-15",
+    "note": "A fixed rate chosen by the team, not a live exchange rate. Update by hand."
+  },
+  "deepgram": {
+    "unit": "per_audio_hour",
+    "merged_audio_billed_channels": {
+      "value": 1,
+      "confirmed": false,
+      "note": "FALLBACK ONLY. Deepgram bills total processed audio: a 10-minute file processed as 2 channels is billed as 20 minutes. When Deepgram reports metadata.channels, that count is billed. This value is used only when it does not. On 2026-09-15 a real stereo file sent without multichannel reported metadata.channels = 1. confirmed stays false until Deepgram's usage export shows that request at 1x its duration."
+    },
+    "models": {
+      "nova-3": {
+        "periods": [
+          {
+            "effective_from": "2026-01-01",
+            "effective_to": null,
+            "rates": {"monolingual": 0.26, "multilingual": 0.31},
+            "confirmed": true,
+            "source": "deepgram.com/pricing, pre-recorded, Pay As You Go, checked 2026-09-15. multilingual applies when language=multi."
+          }
+        ]
+      },
+      "nova-2": {
+        "periods": [
+          {
+            "effective_from": "2026-01-01",
+            "effective_to": null,
+            "rates": {"monolingual": 0.31, "multilingual": 0.31},
+            "confirmed": false,
+            "source": "PLACEHOLDER. nova-2 is not on Deepgram's public pricing page. The nova-3 multilingual rate is used as a conservative stand-in (team decision 2026-09-15). Replace with the rate shown in the Deepgram console."
+          }
+        ]
+      }
+    }
+  },
+  "gemini": {
+    "unit": "per_1m_tokens",
+    "thinking_billed_as": "output",
+    "aliases": {
+      "gemini-flash-latest": [
+        {
+          "effective_from": "2026-01-01",
+          "effective_to": null,
+          "resolves_to": "gemini-3.8-flash",
+          "confirmed": false,
+          "source": "Observed 2026-09 in a quota error that named gemini-3.8-flash. Google can repoint this alias at any time."
+        }
+      ]
+    },
+    "models": {
+      "gemini-3.8-flash": {
+        "periods": [
+          {
+            "effective_from": "2026-01-01",
+            "effective_to": "2027-01-01",
+            "rates": {"input": 0.75, "output": 3.75, "cached_input": 0.075},
+            "confirmed": true,
+            "source": "ai.google.dev/gemini-api/docs/pricing, Standard paid tier, 'through December 31, 2026', checked 2026-09-15."
+          },
+          {
+            "effective_from": "2027-01-01",
+            "effective_to": null,
+            "rates": {"input": 1.50, "output": 7.50, "cached_input": 0.15},
+            "confirmed": true,
+            "source": "Same page, 'starting January 1, 2027'."
+          }
+        ]
+      }
+    }
+  }
+}

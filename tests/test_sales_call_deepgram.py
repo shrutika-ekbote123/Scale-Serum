@@ -76,12 +76,25 @@ def test_diarization_is_always_requested():
     assert params["model"]
 
 
-def test_language_is_detected_unless_pinned(monkeypatch):
+def test_the_default_is_nova3_multi_and_never_auto_detect():
+    """Auto-detect locked onto the rep's English and dropped the customer's
+    Hindi, so the default is the code-switching model instead."""
+    params = dg.build_params()
+    assert params["model"] == "nova-3"
+    assert params["language"] == "multi"
+    assert "detect_language" not in params
+
+
+def test_a_language_hint_overrides_the_default():
+    """A regional call - multi has no Marathi, so the caller pins the code."""
+    assert dg.build_params("mr")["language"] == "mr"
+    assert "detect_language" not in dg.build_params("mr")
+
+
+def test_detection_can_be_restored_by_configuration(monkeypatch):
     monkeypatch.setattr(dg, "DEEPGRAM_LANGUAGE", None)
     monkeypatch.setattr(dg, "DEEPGRAM_DETECT_LANGUAGE", True)
     assert dg.build_params().get("detect_language") == "true"
-    assert dg.build_params("en-IN")["language"] == "en-IN"
-    assert "detect_language" not in dg.build_params("en-IN")
 
 
 # --------------------------------------------------------------------------- happy path

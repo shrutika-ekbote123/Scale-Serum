@@ -45,15 +45,37 @@ logger = logging.getLogger("transcription.deepgram")
 DEEPGRAM_ENDPOINT = os.environ.get("DEEPGRAM_ENDPOINT", "https://api.deepgram.com/v1/listen")
 
 # Model choice is env-driven, exactly like GEMINI_MODEL, so it can be changed
-# without a deploy. nova-2 is the conservative default; evaluate newer models
-# and the multilingual variants against real Hindi/English calls before
-# switching - that is a measurement, not a guess.
-DEEPGRAM_MODEL = os.environ.get("DEEPGRAM_MODEL", "nova-2")
+# without a deploy.
+#
+# WHY nova-3 WITH language=multi - measured 2026-09-17 on four real calls
+#     The previous default, nova-2 with detect_language, picks ONE language for
+#     the whole file. Our reps open in English and do ~85% of the talking, so
+#     detection answers "en" with high confidence and the customer's Hindi or
+#     Marathi is transcribed as garbled English or dropped. On a real
+#     English-then-Hindi call that lost half the conversation: 107 words against
+#     215 with multi, and one speaker found instead of two.
+#
+#     language=multi is Deepgram's code-switching mode. One pass covers a call
+#     that is all English, all Hindi, or English switching into Hindi.
+DEEPGRAM_MODEL = os.environ.get("DEEPGRAM_MODEL", "nova-3")
 
-# Leave DEEPGRAM_LANGUAGE unset to let Deepgram detect. Set it (e.g. "en-IN")
-# when a deployment is known to be single-language.
-DEEPGRAM_LANGUAGE = os.environ.get("DEEPGRAM_LANGUAGE") or None
-DEEPGRAM_DETECT_LANGUAGE = os.environ.get("DEEPGRAM_DETECT_LANGUAGE", "true").lower() == "true"
+# Sent when the request carries no options.language_hint.
+#
+# multi does NOT cover Marathi, Tamil, Telugu, Kannada, Bengali, Gujarati,
+# Punjabi or Urdu - Hindi is its only Indian language. Those calls need their
+# code passed as language_hint (nova-3 with language=mr produced correct Marathi
+# where multi drifted into Hindi). Detecting them automatically is Phase 2.
+DEEPGRAM_LANGUAGE = os.environ.get("DEEPGRAM_LANGUAGE") or "multi"
+
+# Deepgram's own language detection is OFF because it is confidently wrong on
+# these calls: it answered "en" at 98.5% confidence for a Marathi customer even
+# when handed only that customer's audio. Set true to restore the old behaviour.
+DEEPGRAM_DETECT_LANGUAGE = os.environ.get("DEEPGRAM_DETECT_LANGUAGE", "false").lower() == "true"
+
+# Never sent today, so Deepgram merges all channels into one stream. Deepgram
+# bills each channel separately when multichannel is on (a 10-minute stereo file
+# becomes 20 billed minutes), so this is recorded on every analysis for billing.
+MULTICHANNEL = False
 
 DEEPGRAM_TIMEOUT_SECONDS = float(os.environ.get("DEEPGRAM_TIMEOUT_SECONDS", 300))
 DEEPGRAM_CONNECT_TIMEOUT = float(os.environ.get("DEEPGRAM_CONNECT_TIMEOUT", 15))
@@ -127,6 +149,48 @@ async def aclose() -> None:
     _client = None
 
 
+def effective_language(language: Optional[str] = None) -> Optional[str]:
+    """The `language` value actually sent, or None when Deepgram detects it.
+    Billing needs it: language=multi is priced at the multilingual rate."""
+    return language or DEEPGRAM_LANGUAGE
+
+
+# Which single language codes nova-3 accepts, by what they mean for us.
+#
+#   MULTI_COVERED   already handled by language=multi. Asking for "hi" by name
+#                   would transcribe the rep's English as broken Hindi, so a
+#                   detected en or hi means "change nothing".
+#   REGIONAL        NOT in multi (Hindi is its only Indian language). These must
+#                   be requested by name or the customer's half is lost.
+#   UNSUPPORTED     Deepgram has no model for these at all.
+MULTI_COVERED_LANGUAGES = {"en", "hi"}
+REGIONAL_LANGUAGES = {"mr", "ta", "te", "kn", "bn", "gu", "pa", "ur"}
+UNSUPPORTED_LANGUAGES = {"ml"}
+
+LANGUAGE_COVERED_BY_MULTI = "covered_by_multi"
+LANGUAGE_REGIONAL = "regional_code"
+LANGUAGE_UNSUPPORTED = "unsupported_by_provider"
+LANGUAGE_UNKNOWN = "unknown_language_code"
+
+
+def language_for(detected: Optional[str]) -> tuple[Optional[str], str]:
+    """(language to send, why). None means "leave the default alone".
+
+    An unknown or unsupported language deliberately falls back to the default
+    rather than being passed through: sending a code Deepgram does not accept
+    fails the whole transcription, and a wrong-but-complete transcript beats no
+    transcript at all.
+    """
+    code = (detected or "").strip().lower()
+    if not code or code in MULTI_COVERED_LANGUAGES:
+        return None, LANGUAGE_COVERED_BY_MULTI
+    if code in REGIONAL_LANGUAGES:
+        return code, LANGUAGE_REGIONAL
+    if code in UNSUPPORTED_LANGUAGES:
+        return None, LANGUAGE_UNSUPPORTED
+    return None, LANGUAGE_UNKNOWN
+
+
 def build_params(language: Optional[str] = None) -> dict[str, Any]:
     """Query parameters for a pre-recorded request.
 
@@ -142,7 +206,9 @@ def build_params(language: Optional[str] = None) -> dict[str, Any]:
         "punctuate": "true",
         "smart_format": "true",
     }
-    chosen = language or DEEPGRAM_LANGUAGE
+    if MULTICHANNEL:
+        params["multichannel"] = "true"
+    chosen = effective_language(language)
     if chosen:
         params["language"] = chosen
     elif DEEPGRAM_DETECT_LANGUAGE:
@@ -229,6 +295,19 @@ async def _fetch_audio(client: httpx.AsyncClient, url: str) -> tuple[bytes, Opti
         raise DeepgramError(AUDIO_UNREACHABLE,
                             f"The recording could not be fetched: {type(err).__name__}",
                             retryable=True) from err
+
+
+async def fetch_audio(audio_url: str) -> tuple[bytes, Optional[str]]:
+    """Download a recording into memory, capped at MAX_AUDIO_BYTES.
+
+    Public because language identification needs the bytes even when Deepgram
+    itself is handed the URL. Same client, same cap, same reason codes - one
+    place that knows how to fetch a recording.
+    """
+    if not (audio_url or "").strip():
+        raise DeepgramError(AUDIO_UNREACHABLE, "No recording URL was supplied.",
+                            retryable=False)
+    return await _fetch_audio(await get_client(), audio_url)
 
 
 async def transcribe(audio_url: str, *, mime_type: Optional[str] = None,
