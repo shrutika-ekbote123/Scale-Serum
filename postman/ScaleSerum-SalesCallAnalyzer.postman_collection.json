@@ -622,6 +622,49 @@
           }
         }
       ]
+    },
+    {
+      "name": "13. Provider bill — Deepgram + Gemini cost for a date range",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/sales-calls/billing/summary?from=2026-09-01&to=2026-10-01&tz=ist",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "sales-calls",
+            "billing",
+            "summary"
+          ],
+          "query": [
+            {
+              "key": "from",
+              "value": "2026-09-01",
+              "description": "Start, inclusive. YYYY-MM-DD or ISO datetime."
+            },
+            {
+              "key": "to",
+              "value": "2026-10-01",
+              "description": "End, exclusive. Defaults to one month after from."
+            },
+            {
+              "key": "tz",
+              "value": "ist",
+              "description": "ist (default) or utc - use utc to compare with Deepgram's usage CSV."
+            },
+            {
+              "key": "status",
+              "value": "completed,failed,skipped",
+              "disabled": true
+            }
+          ]
+        },
+        "description": "Estimated spend for analyses created in [from, to). Deepgram is billed on audio x billed channels; Gemini on tokens including thinking and rejected attempts. Not a provider invoice - read `disclaimers`."
+      },
+      "response": []
     }
   ]
 }

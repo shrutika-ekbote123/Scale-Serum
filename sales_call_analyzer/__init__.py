@@ -79,6 +79,12 @@ ROLE_BASIS_CUSTOMER_ADDRESSED = "crm_customer_name_addressed"
 ROLE_BASIS_ELIMINATION = "single_other_speaker_by_elimination"
 ROLE_BASIS_SUPPLIED = "supplied_by_caller"
 
+# Why the transcription ran in the language it did. Same idea as ROLE_BASIS_*:
+# a decision is only trustworthy if it says what it was based on.
+LANGUAGE_BASIS_SUPPLIED = "supplied_by_caller"      # options.language_hint
+LANGUAGE_BASIS_DETECTED = "detected_from_audio"     # identified by the LLM
+LANGUAGE_BASIS_DEFAULT = "server_default"           # DEEPGRAM_LANGUAGE (multi)
+
 # --------------------------------------------------------------------------- reason codes
 # Stable identifiers. The UI and the backend may branch on these; do not reword
 # them without telling the backend team.

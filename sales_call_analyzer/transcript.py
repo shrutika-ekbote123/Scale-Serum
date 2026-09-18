@@ -293,11 +293,26 @@ def from_deepgram(response: dict, *, language_hint: Optional[str] = None,
         language_detected=detected,
         duration_seconds=float(duration) if isinstance(duration, (int, float)) else None,
     )
+    transcript.channels_processed = _channels_processed(response)
     transcript.diarization_available = any(
         s.speaker_id != UNATTRIBUTED_SPEAKER_ID for s in transcript.segments)
     if not transcript.diarization_available:
         transcript.quality.warnings.append(WARN_NO_SPEAKER_ATTRIBUTION)
     return transcript
+
+
+def _channels_processed(response: dict) -> Optional[int]:
+    """Channels Deepgram processed - what it bills. Not the file's channel count:
+    a stereo file sent without multichannel is merged and reports 1 (verified on
+    a real stereo recording). The per-channel results list is the fallback.
+    Unknown stays None, never 1."""
+    channels = (response.get("metadata") or {}).get("channels")
+    if isinstance(channels, int) and not isinstance(channels, bool) and channels > 0:
+        return channels
+    results = (response.get("results") or {}).get("channels")
+    if isinstance(results, list) and results:
+        return len(results)
+    return None
 
 
 # =========================================================================== #

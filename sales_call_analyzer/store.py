@@ -76,6 +76,12 @@ def compute_fingerprint(request: AnalyzeRequest, *, framework_version: str,
     Versions are part of the key on purpose: re-running the same call under a
     new framework or a new model is a different analysis and should be allowed
     to proceed, while an accidental double-submit of the same call is free.
+
+    So is the requested language. Re-submitting a Marathi call with
+    language_hint="mr" after it was first transcribed as English asks a genuinely
+    different question, and returning the earlier English-only result would look
+    like the hint was ignored. The stored transcript is still reused when the
+    language is unchanged, so this costs Deepgram nothing.
     """
     supplied = request.transcript
     transcript_material = ""
@@ -92,6 +98,7 @@ def compute_fingerprint(request: AnalyzeRequest, *, framework_version: str,
         (request.audio.url if request.audio else "") or "",
         hashlib.sha256(transcript_material.encode("utf-8")).hexdigest(),
         framework_version, prompt_version, llm_model, transcription_model,
+        (request.options.language_hint or ""),
     ])
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
@@ -141,6 +148,17 @@ class AnalysisStore:
             {"call_id": call_id, "transcript": {"$ne": None}}).sort("created_at", -1)
         results = await cursor.to_list(length=1)
         return (results[0].get("transcript") if results else None)
+
+    async def billing_docs(self, start: datetime, end: datetime,
+                           statuses: Optional[list[str]] = None) -> list[dict]:
+        """Analyses created in [start, end), with only what the bill needs.
+        No transcript, report or request snapshot - no customer data."""
+        query: dict[str, Any] = {"created_at": {"$gte": start, "$lt": end}}
+        if statuses:
+            query["status"] = {"$in": list(statuses)}
+        cursor = self.collection.find(
+            query, {"_id": 1, "call_id": 1, "status": 1, "created_at": 1, "processing": 1})
+        return await cursor.to_list(length=None)
 
     # ----------------------------------------------------------------- writes
     async def create(self, *, analysis_id: str, request: AnalyzeRequest,
@@ -258,6 +276,7 @@ class AnalysisStore:
             await self.collection.create_index([("call_id", 1), ("created_at", -1)])
             await self.collection.create_index("input_fingerprint")
             await self.collection.create_index([("status", 1), ("heartbeat_at", 1)])
+            await self.collection.create_index("created_at")     # billing date range
             if self.raw_collection is not None:
                 await self.raw_collection.create_index("expires_at", expireAfterSeconds=0)
         except Exception as err:  # noqa: BLE001 - never block startup on an index

@@ -116,9 +116,15 @@ Until this is done the backend cannot call the AI service over HTTPS.
 
 ```
 DEEPGRAM_API_KEY=<key>
-DEEPGRAM_MODEL=nova-2
+DEEPGRAM_MODEL=nova-3
+DEEPGRAM_LANGUAGE=multi
+DEEPGRAM_DETECT_LANGUAGE=false
 GEMINI_MODEL=gemini-flash-latest
 ```
+
+**If this server was set up earlier, check these three.** The old default was
+`nova-2` with detection on, which loses the customer's Hindi on a call that
+opens in English — see [4.6 Languages](#46-languages).
 
 Without the Deepgram key the feature deploys **silently dead** — audio requests
 return `transcription_not_configured`.
@@ -161,6 +167,7 @@ analysis in progress. Please target the backend process by name.
 | `GET` | `/api/sales-calls/analysis/{analysis_id}` | Poll status, then read the report |
 | `GET` | `/api/sales-calls/analysis/by-call/{call_id}` | Latest analysis for a call |
 | `POST` | `/api/sales-calls/analysis/{analysis_id}/rescore` | Recompute scores. No provider calls, no cost |
+| `GET` | `/api/sales-calls/billing/summary` | Estimated Deepgram + Gemini bill for a date range |
 
 **Versioning** is carried in the payload (`framework_version`, `prompt_version`,
 `transcript_version`), not the URL — matching the rest of this service. Response
@@ -363,7 +370,7 @@ for a 10-minute call.
 
   "processing": {
     "transcription_ms": 4967, "llm_ms": 15000, "total_ms": 20063,
-    "transcription_provider": "deepgram", "transcription_model": "nova-2",
+    "transcription_provider": "deepgram", "transcription_model": "nova-3",
     "llm_model": "gemini-flash-latest",
     "prompt_version": "sales_call_v2", "framework_version": "sales_v1",
     "audio_seconds_submitted": 593.64,
@@ -393,7 +400,213 @@ configuration. **No Deepgram call, no Gemini call, no cost.**
 
 When management finalises weights or thresholds, every historical call can be
 brought onto the new rules without re-analysing. Returns the updated report.
-Returns 409 if the analysis is not `completed`.
+Returns 409 if the analysis is not `completed`. The stored cost block is kept unchanged.
+
+---
+
+### 4.5 Usage and cost — per report and per date range
+
+#### `usage` — one block per report
+
+Every report carries a `usage` block: tokens, audio and money in one place.
+Nothing new is recorded to build it and no extra provider call is made — it is
+derived from `processing`, which keeps all the per-field detail.
+
+```json
+"usage": {
+  "tokens": {
+    "analysis":    { "input": 7688, "output": 9665, "thinking": 1814, "total": 19167 },
+    "language_id": { "input": 3235, "output": 76, "thinking": 751, "total": 4062 }
+  },
+  "total_tokens": 23229,
+  "audio": { "seconds": 593.64, "minutes": 9.89, "billed_channels": 1,
+             "billed_seconds": 593.64, "billed_minutes": 9.89, "billed_hours": 0.1649 },
+  "cost": { "deepgram_usd": 0.051119, "gemini_usd": 0.048812,
+            "total_usd": 0.099931, "total_inr": 8.79, "usd_to_inr": 88.0,
+            "estimated": true, "rates_confirmed": false }
+}
+```
+
+Points worth knowing:
+
+- **`total_tokens` covers every LLM step**, including the language-identification
+  call. `processing.llm_total_tokens` counts only the analysis call.
+- **`language_id` appears only when detection ran.** No block means no such call
+  and nothing billed for it.
+- **Deepgram has no tokens.** It bills processed audio, so the audio block gives
+  minutes and hours — the units Deepgram's own console and usage CSV use.
+- **Nothing reported stays `null`**, never 0. A missing token count means the
+  provider did not report one, which is not the same as none being used.
+- **Failed analyses carry it too.** A failed call still spent money.
+- `cost` is a flattened copy; the rates and the working stay in `processing.cost`.
+
+#### Cost — the detail
+
+
+
+Every report (completed, skipped **and failed**) carries an estimated cost in
+`processing.cost`. These are **estimates** built from `billing/pricing.json`.
+They are not a provider invoice.
+
+**How it is calculated**
+
+| Provider | Formula |
+|---|---|
+| Deepgram | `billed_seconds = audio_seconds × billed_channels`; `usd = billed_seconds / 3600 × rate_per_hour` |
+| Gemini | `usd = [(input − cached) × input_rate + cached × cached_rate + (output + thinking) × output_rate] / 1,000,000`, summed over **every** attempt, including rejected ones |
+
+**How channels are billed.** Deepgram bills total processed audio, so a 10-minute
+stereo file processed as 2 channels is billed as 20 minutes. The analyzer never sends
+`multichannel`, so Deepgram merges a stereo file into one stream. Each report records:
+
+- `channels_processed`: the channel count Deepgram itself reports in `metadata.channels`.
+  This is **not** the file's channel count. A real stereo test recording came back as `1`.
+- `billed_channels`: the number used for the cost.
+- `billed_channels_basis`: `deepgram_metadata` when Deepgram reported a count, or
+  `config_rule` (1 for merged audio) when it did not.
+
+`billed_channels_confirmed` stays `false` until one call has been checked against
+Deepgram's usage CSV.
+
+**Cases where Deepgram cost is zero or unknown**
+
+| Situation | `deepgram.usd` | `reason` |
+|---|---|---|
+| Transcript reused from an earlier attempt | `0` | `reused_stored_transcript_no_deepgram_charge` |
+| Caller supplied the transcript | `0` | `supplied_transcript_no_deepgram_charge` |
+| Deepgram failed (timeout/provider error) | `null` | `transcription_failed_charge_unknown` |
+| Model or rate not configured | `null` | `rate_not_configured` |
+
+"Unknown" is always `null`, never `0`. If any part of a run is unpriced, `total_usd`
+is `null`, while `priced_usd_partial` still adds up everything that could be priced.
+The `notes[]` array lists every unconfirmed input: `deepgram_rate_unconfirmed`,
+`billed_channels_unconfirmed`, `gemini_alias_unconfirmed`, `fx_fixed_rate`.
+
+#### `GET /api/sales-calls/billing/summary`
+
+| Query | Default | Meaning |
+|---|---|---|
+| `from` | required | Start date, inclusive. Either `YYYY-MM-DD` (midnight in `tz`) or an ISO datetime |
+| `to` | `from` + 1 month | End date, **exclusive** |
+| `tz` | `ist` | `ist` or `utc`. Use `utc` when comparing against Deepgram's usage export |
+| `status` | all terminal | Comma-separated list: `completed,failed,skipped` |
+
+```
+GET /api/sales-calls/billing/summary?from=2026-09-01&to=2026-10-01
+```
+
+Returns:
+
+- `totals`: `usd`, `inr`, `priced_usd_partial`, `complete`
+- `tokens`: `input`, `output`, `thinking`, `cached`, `total` for the whole range
+- `per_analysis`: average `usd`, `tokens` and `billed_minutes` per analysis —
+  divided by analyses, not runs, so a retry counts as part of the same analysis
+- `by_provider[]` — the Deepgram row also carries `billed_minutes` and `billed_hours`
+- `by_model[]`: includes `rate_confirmed`
+- `by_billed_channels[]`: grouped by `billed_channels` and `basis`
+- `counts`
+- `disclaimers[]`
+
+Some behaviour to be aware of:
+
+- **Failed analyses count**, because they still cost money.
+- **Retries of the same `analysis_id` count** through `processing.cost_prior_runs`.
+- **Analyses from before cost tracking** are re-priced from their stored usage, assuming 1 channel, and are counted under `backfilled`.
+- **Errors:** a bad range, a range over 366 days, or an unknown `tz` or `status` returns 422.
+- **No PII:** no transcript or customer data is returned.
+
+**Changing a rate.** Edit `billing/pricing.json`, bump `pricing_version`, redeploy.
+Rates are date-effective, so a report is always priced at the rate that was in
+force when it ran. To change a rate, add a new period; never edit a past one.
+
+Pending confirmations:
+
+- The **nova-2** rate is a placeholder: $0.31/hr, `confirmed: false`. It now
+  applies only to analyses run before 2026-09-17, since nova-3 is the default.
+- **Gemini 3.8 Flash** doubles on 2027-01-01. That change is already configured.
+- **INR** is converted at a fixed ₹88 per USD.
+
+---
+
+### 4.6 Languages
+
+**Default: nova-3 with `language=multi`.** One pass handles a call that is all
+English, all Hindi, or opens in English and continues in Hindi.
+
+Measured on real calls, 2026-09-17:
+
+| Call | Old default (nova-2 + detect) | nova-3 `multi` |
+|---|---|---|
+| English → Hindi | 107 words, 1 speaker | **215 words, 2 speakers** |
+| English → Marathi | 233 words, Marathi lost | 385 words, Marathi present |
+
+**Why detection is off.** Deepgram picks one language for the whole file. Reps
+open in English and do about 85% of the talking, so it answers `en` and the
+customer's regional speech is dropped. On a Marathi call it returned `en` at
+98.5% confidence — even when given only that customer's audio.
+
+**Regional calls need a hint.** `multi` covers Hindi only. For anything else,
+send the code on the request:
+
+```json
+{ "options": { "language_hint": "mr" } }
+```
+
+| Language | Code | | Language | Code |
+|---|---|---|---|---|
+| Marathi | `mr` | | Bengali | `bn` |
+| Tamil | `ta` | | Gujarati | `gu` |
+| Telugu | `te` | | Punjabi | `pa` |
+| Kannada | `kn` | | Urdu | `ur` |
+
+Verified end to end for Hindi and Marathi only. The others are listed as
+supported by Deepgram but have not been checked against a real call. **Malayalam
+is not supported at all.**
+
+#### Automatic detection
+
+When the backend sends no hint, the service can work the language out itself.
+A short window of the audio (3 minutes, starting at 0:20 — the opening is
+English on almost every call) goes to Gemini, which reports the **share** of each
+language rather than one winner. A regional answer is then used as the Deepgram
+language; `en` or `hi` changes nothing, because `multi` already covers both.
+
+Measured end to end on 2026-09-17:
+
+| Call | Detected | Sent to Deepgram | Result |
+|---|---|---|---|
+| English + Marathi | `mr` (55% mr / 45% en) | `mr` | Correct Marathi, 2 speakers |
+| English + Hindi | `hi` (60/40) | `multi` | 215 words, 2 speakers |
+| All English | none | `multi` | 1612 words, 3 speakers |
+
+Identification takes 4-9 seconds and costs about **$0.005** a call. It is billed
+inside the Gemini block, and `processing.language_id_*_tokens` shows it on its own.
+
+**It is off by default.** `SCA_LANGUAGE_ID` takes:
+
+| Value | Behaviour |
+|---|---|
+| `off` | never runs (default) |
+| `shadow` | detects and records `language_shadow_choice`, changes nothing |
+| `on` | acts on the answer |
+
+Run `shadow` on live calls first and compare `language_shadow_choice` against
+reality before switching it to `on`.
+
+Every report says how its language was chosen, in `processing.language_basis`:
+`supplied_by_caller`, `detected_from_audio`, or `server_default`. Detection never
+fails an analysis — a provider error, an unreachable recording or a missing
+ffmpeg all leave `multi` in place and are recorded in
+`language_detection_reason`.
+
+**`ffmpeg` is used, not required.** Without it the whole recording is sent when
+it is under 8 MB, and identification is skipped for anything longer.
+`GET /health` reports `sales_call_analyzer.language_id.ffmpeg`.
+
+One consequence worth knowing: re-submitting a call with a different
+`language_hint` is now a **different** analysis, so it re-runs rather than
+returning the earlier result. The stored transcript is still reused when the
+language is unchanged, so this costs Deepgram nothing.
 
 ---
 

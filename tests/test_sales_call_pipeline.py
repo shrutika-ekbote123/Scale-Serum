@@ -70,6 +70,12 @@ class FakeCollection:
                     return False
                 if "$nin" in expected and value in expected["$nin"]:
                     return False
+                if "$in" in expected and value not in expected["$in"]:
+                    return False
+                if "$gte" in expected and (value is None or value < expected["$gte"]):
+                    return False
+                if "$lt" in expected and (value is None or value >= expected["$lt"]):
+                    return False
             elif value != expected:
                 return False
         return True
@@ -80,7 +86,7 @@ class FakeCollection:
                 return copy.deepcopy(doc)
         return None
 
-    def find(self, query):
+    def find(self, query, projection=None):
         return FakeCursor([copy.deepcopy(d) for d in self.docs.values()
                            if self._matches(d, query)])
 
@@ -132,7 +138,7 @@ class FakeClient:
 
 
 DEEPGRAM_RESPONSE = {
-    "metadata": {"duration": 45.0},
+    "metadata": {"duration": 45.0, "channels": 1},
     "results": {"utterances": [
         {"speaker": 0, "start": 0.0, "end": 6.0, "confidence": 0.95,
          "transcript": "Hi Meera, this is Rajan Kumar from EdTech Pro. Is now a good time?"},
