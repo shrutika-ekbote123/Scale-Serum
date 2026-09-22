@@ -27,7 +27,7 @@ from typing import List, Optional
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
-from fastapi import (BackgroundTasks, FastAPI, File, Form, HTTPException, Depends,
+from fastapi import (BackgroundTasks, FastAPI, File, Form, Header, HTTPException, Depends,
                      Query, Security, UploadFile)
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
@@ -88,10 +88,16 @@ if MONGODB_URI:
     # product-tier override. Both keyed by _id - see ai_suggested_next_action/store.py.
     ai_suggested_next_actions = mongo_client[MONGODB_DB]["ai_suggested_next_actions"]
     ai_suggested_next_action_tiers = mongo_client[MONGODB_DB]["ai_suggested_next_action_tiers"]
+    # AI Briefings: one stored briefing per brand, local day and tab, plus one
+    # record per generation run - see ai_briefings/store.py.
+    ai_briefings_collection = mongo_client[MONGODB_DB]["ai_briefings"]
+    ai_briefing_runs = mongo_client[MONGODB_DB]["ai_briefing_runs"]
 else:
     mongo_client = None
     ai_suggested_next_actions = None
     ai_suggested_next_action_tiers = None
+    ai_briefings_collection = None
+    ai_briefing_runs = None
     brand_brains = None
     sales_call_analyses = None
     sales_call_transcripts_raw = None
@@ -304,6 +310,33 @@ ai_next_action_store = None
 if AI_NEXT_ACTION_AVAILABLE and ai_suggested_next_actions is not None:
     ai_next_action_store = _na.NextActionStore(
         ai_suggested_next_actions, ai_suggested_next_action_tiers)
+
+
+# ---------------------------------------------------------------------------
+# AI Briefings (the Briefings page: All, Sales Team, Ads & Marketing, WhatsApp,
+# Leads).
+#
+# Imported defensively like the features above. Reading a briefing is a Mongo
+# lookup only; generation (POST /generate here, and the briefing-worker process
+# every morning) reads scrumdb through the purchase-probability pool.
+# ---------------------------------------------------------------------------
+AI_BRIEFINGS_AVAILABLE = True
+try:
+    import ai_briefings as _ab
+    from ai_briefings import data as _ab_data
+    from ai_briefings import loaders as _ab_loaders
+    from ai_briefings import timezones as _ab_tz
+    from ai_briefings import views as _ab_views
+
+    _ab.load_config()                 # fail loudly here rather than per request
+except Exception as _ab_import_error:  # pragma: no cover - import-time only
+    AI_BRIEFINGS_AVAILABLE = False
+    _AB_IMPORT_ERROR = repr(_ab_import_error)
+    print(f"WARNING: ai_briefings unavailable - {_AB_IMPORT_ERROR}")
+
+ai_briefing_store = None
+if AI_BRIEFINGS_AVAILABLE and ai_briefings_collection is not None:
+    ai_briefing_store = _ab.BriefingStore(ai_briefings_collection, ai_briefing_runs)
 
 
 @asynccontextmanager
@@ -611,6 +644,10 @@ async def health():
         "ai_suggested_next_action": {
             "available": AI_NEXT_ACTION_AVAILABLE,
             "storage": "configured" if ai_next_action_store is not None else "not_configured",
+        },
+        "ai_briefings": {
+            "available": AI_BRIEFINGS_AVAILABLE,
+            "storage": "configured" if ai_briefing_store is not None else "not_configured",
         },
     }
 
@@ -2527,6 +2564,262 @@ async def ai_suggested_next_action_tiers_delete(brand_id: str):
     _require_uuid(brand_id, "brand_id")
     deleted = await ai_next_action_store.delete_tier_override(brand_id)
     return {"brand_id": brand_id, "deleted": deleted}
+
+
+# ---------------------------------------------------------------------------
+# AI Briefings
+#
+# The Briefings page reads stored briefings - generated each morning by the
+# briefing-worker process (ai_briefings/worker.py), or on demand by POST
+# /generate. Reads never touch scrumdb or Gemini.
+#
+# VIEWER SCOPING. The main app forwards who is looking, and the response is
+# filtered to their tabs (and, without team view, to their own rep row):
+#     X-User-Id, X-User-Role, X-User-Permissions (comma-separated)
+# With none of these headers the call is treated as a service call and sees
+# everything. See ai_briefings/access.py.
+# ---------------------------------------------------------------------------
+AB_TAG = "AI Briefings"
+AB_SECTION_PATTERN = "^(all|sales|ads|whatsapp|leads)$"
+
+
+def _require_briefings():
+    if not AI_BRIEFINGS_AVAILABLE:
+        raise HTTPException(status_code=503,
+                            detail="AI Briefings are not available on this server.")
+    if ai_briefing_store is None:
+        raise HTTPException(status_code=503, detail=(
+            "Briefing storage is not configured. Set MONGODB_URI in the environment."))
+
+
+def _ab_date(value: Optional[str], name: str = "date") -> Optional[str]:
+    if value is None:
+        return None
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"{name} must be a date, YYYY-MM-DD")
+    return value
+
+
+def _ab_viewer(user_id: Optional[str], role: Optional[str], permissions: Optional[str]):
+    viewer = _ab.viewer_from(user_id, role, permissions)
+    if not viewer.can_open_page:
+        raise HTTPException(status_code=403, detail=(
+            "This user's role does not include the 'briefings' permission."))
+    return viewer
+
+
+def _ab_deps():
+    return _ab.BriefingDeps(
+        run_sync=run_in_threadpool,
+        store=ai_briefing_store,
+        llm_client=client,
+        llm_model=GEMINI_MODEL,
+        load_analyses=_ab_loaders.analyses_loader(sales_call_analyses),
+        load_brand_brain=_ab_loaders.brand_brain_loader(brand_brains),
+        price_usage=_ab_loaders.usage_pricer(GEMINI_MODEL),
+    )
+
+
+async def _ab_forbidden(call):
+    try:
+        return await call
+    except _ab_views.Forbidden as err:
+        raise HTTPException(status_code=403, detail=(
+            f"This user's permissions do not include the '{err}' briefing."))
+
+
+@app.get("/api/ai-briefings/{brand_id}/today", tags=[AB_TAG],
+         summary="The briefing for one tab (default: the brand's yesterday)",
+         dependencies=[Depends(require_api_key)])
+async def ai_briefings_today(
+    brand_id: str,
+    section: str = Query("all", pattern=AB_SECTION_PATTERN,
+                         description="all | sales | ads | whatsapp | leads"),
+    date_: Optional[str] = Query(None, alias="date", description="YYYY-MM-DD, brand-local. "
+                                 "Omit for the brand's yesterday."),
+    x_user_id: Optional[str] = Header(None),
+    x_user_role: Optional[str] = Header(None),
+    x_user_permissions: Optional[str] = Header(None),
+):
+    """One tab's card: `summary` (label, text, top, watch), `watch`, `kpis`,
+    `blocks` (the Read more modal), `score_card`, and `tabs` (which tabs this
+    viewer has and whether each has data).
+
+    `stale: true` means the requested day has not been generated yet and the
+    newest earlier briefing is returned instead - show its `date_label`.
+    `available: false` with `reason` (`not_generated`, `whatsapp_not_connected`,
+    `no_sales_calls`, ...) means there is nothing to brief on; show `message`.
+    """
+    _require_briefings()
+    _require_uuid(brand_id, "brand_id")
+    viewer = _ab_viewer(x_user_id, x_user_role, x_user_permissions)
+    return await _ab_forbidden(_ab_views.today(
+        ai_briefing_store, brand_id, section, viewer, _ab_date(date_),
+        datetime.now(timezone.utc)))
+
+
+@app.get("/api/ai-briefings/{brand_id}/latest", tags=[AB_TAG],
+         summary="Compact All-sections briefing for the dashboard header card",
+         dependencies=[Depends(require_api_key)])
+async def ai_briefings_latest(
+    brand_id: str,
+    x_user_id: Optional[str] = Header(None),
+    x_user_role: Optional[str] = Header(None),
+    x_user_permissions: Optional[str] = Header(None),
+):
+    _require_briefings()
+    _require_uuid(brand_id, "brand_id")
+    viewer = _ab_viewer(x_user_id, x_user_role, x_user_permissions)
+    return await _ab_forbidden(_ab_views.latest(
+        ai_briefing_store, brand_id, viewer, datetime.now(timezone.utc)))
+
+
+@app.get("/api/ai-briefings/{brand_id}/score", tags=[AB_TAG],
+         summary="Sales Team Consolidated Score card and per-rep briefing",
+         dependencies=[Depends(require_api_key)])
+async def ai_briefings_score(
+    brand_id: str,
+    date_: Optional[str] = Query(None, alias="date", description="YYYY-MM-DD, brand-local."),
+    x_user_id: Optional[str] = Header(None),
+    x_user_role: Optional[str] = Header(None),
+    x_user_permissions: Optional[str] = Header(None),
+):
+    """`score_card`: score (0-100), trend, calls yesterday and over the window,
+    closures (count and revenue), conversion - each with its `basis`. `reps`:
+    one row per rep with calls, score, good and watch. A viewer without team
+    view gets only their own row."""
+    _require_briefings()
+    _require_uuid(brand_id, "brand_id")
+    viewer = _ab_viewer(x_user_id, x_user_role, x_user_permissions)
+    return await _ab_forbidden(_ab_views.score(
+        ai_briefing_store, brand_id, viewer, _ab_date(date_), datetime.now(timezone.utc)))
+
+
+@app.get("/api/ai-briefings/{brand_id}/history", tags=[AB_TAG],
+         summary="Past Briefings, newest first, paged by day",
+         dependencies=[Depends(require_api_key)])
+async def ai_briefings_history(
+    brand_id: str,
+    section: str = Query("all", pattern=AB_SECTION_PATTERN,
+                         description="all = every tab this viewer may see"),
+    before: Optional[str] = Query(None, description="YYYY-MM-DD, exclusive. Pass "
+                                  "`next_before` from the previous page."),
+    limit: int = Query(10, ge=1, le=60, description="Number of DAYS per page."),
+    x_user_id: Optional[str] = Header(None),
+    x_user_role: Optional[str] = Header(None),
+    x_user_permissions: Optional[str] = Header(None),
+):
+    _require_briefings()
+    _require_uuid(brand_id, "brand_id")
+    viewer = _ab_viewer(x_user_id, x_user_role, x_user_permissions)
+    return await _ab_forbidden(_ab_views.history(
+        ai_briefing_store, brand_id, section, viewer, _ab_date(before, "before"), limit))
+
+
+@app.get("/api/ai-briefings/briefing/{briefing_id}", tags=[AB_TAG],
+         summary="One stored briefing in full (the Read more modal)",
+         dependencies=[Depends(require_api_key)])
+async def ai_briefings_one(
+    briefing_id: str,
+    x_user_id: Optional[str] = Header(None),
+    x_user_role: Optional[str] = Header(None),
+    x_user_permissions: Optional[str] = Header(None),
+):
+    _require_briefings()
+    viewer = _ab_viewer(x_user_id, x_user_role, x_user_permissions)
+    doc = await _ab_forbidden(_ab_views.one(ai_briefing_store, briefing_id, viewer))
+    if doc is None:
+        raise HTTPException(status_code=404, detail="No briefing with this id.")
+    return doc
+
+
+async def _ab_run_queue(brand_id: str, items: list, trigger: str) -> None:
+    """Generate queued days one after another. Gemini and scrumdb are network
+    waits, so this is safe on the event loop; the hot-lead scoring runs in the
+    threadpool with the rest of the synchronous work."""
+    deps = _ab_deps()
+    for item in items:
+        try:
+            await _ab.generate_day(brand_id, deps, day=item["day"], trigger=trigger,
+                                   run_id=item["run_id"], run_queued=True)
+        except Exception:  # noqa: BLE001 - one day must never stop the rest
+            logger.exception("briefing generation crashed [brand_id=%s date=%s]",
+                             brand_id, item["day"])
+            await ai_briefing_store.finish_run(item["run_id"], status="failed",
+                                               error="generation_crashed")
+
+
+@app.post("/api/ai-briefings/{brand_id}/generate", tags=[AB_TAG], status_code=202,
+          summary="Generate (or regenerate) briefings now - one day or a backfill",
+          dependencies=[Depends(require_api_key)])
+async def ai_briefings_generate(
+    brand_id: str,
+    background: BackgroundTasks,
+    date_: Optional[str] = Query(None, alias="date", description="YYYY-MM-DD, brand-local. "
+                                 "The last day to generate; default the brand's yesterday."),
+    days: int = Query(1, ge=1, le=30, description="How many days, ending at `date`. "
+                      "30 fills Past Briefings for a new brand."),
+    x_user_id: Optional[str] = Header(None),
+    x_user_role: Optional[str] = Header(None),
+    x_user_permissions: Optional[str] = Header(None),
+):
+    """Admin action. Returns 202 with one queued run per day; poll GET /runs for
+    progress. Regenerating a day replaces that day's five briefings and nothing
+    else."""
+    _require_briefings()
+    _require_uuid(brand_id, "brand_id")
+    viewer = _ab.viewer_from(x_user_id, x_user_role, x_user_permissions)
+    if not viewer.is_super:
+        raise HTTPException(status_code=403, detail="Only a super admin can generate briefings.")
+    try:
+        brand = await run_in_threadpool(_ab_data.load_brand, brand_id)
+    except _ab_data.DataUnavailable:
+        raise HTTPException(status_code=503, detail="The brand database could not be read.")
+    if brand is None:
+        raise HTTPException(status_code=404, detail="No brand with this id.")
+    zone = _ab_tz.resolve(brand.get("timezone"))
+    yesterday = _ab_tz.yesterday(datetime.now(timezone.utc), zone)
+    last = date.fromisoformat(_ab_date(date_)) if date_ else yesterday
+    if last > yesterday:
+        raise HTTPException(status_code=422, detail=(
+            f"date must be on or before the brand's yesterday ({yesterday.isoformat()}); "
+            "a day is briefed once it is over."))
+    trigger = "backfill" if days > 1 else "manual"
+    items = []
+    for offset in range(days - 1, -1, -1):
+        day = last - timedelta(days=offset)
+        run_id = _ab.new_run_id()
+        await ai_briefing_store.queue_run(run_id, brand_id=brand_id, day=day.isoformat(),
+                                          trigger=trigger)
+        items.append({"run_id": run_id, "day": day})
+    # Indexes are created here and by the briefing-worker at start, not in the
+    # lifespan: reads work without them, and touching the shared Motor client
+    # at startup binds it to whichever event loop happens to boot first.
+    await ai_briefing_store.ensure_indexes()
+    background.add_task(_ab_run_queue, brand_id, items, trigger)
+    logger.info("briefings queued [brand_id=%s days=%d last=%s]", brand_id, days, last)
+    return {"brand_id": brand_id, "brand_name": brand.get("name"),
+            "timezone": {"name": zone.name, "source": zone.source},
+            "runs": [{"run_id": i["run_id"], "date": i["day"].isoformat(), "status": "queued"}
+                     for i in items]}
+
+
+@app.get("/api/ai-briefings/{brand_id}/runs", tags=[AB_TAG],
+         summary="Recent generation runs and their status",
+         dependencies=[Depends(require_api_key)])
+async def ai_briefings_runs(
+    brand_id: str,
+    limit: int = Query(20, ge=1, le=100),
+):
+    _require_briefings()
+    _require_uuid(brand_id, "brand_id")
+    runs = await ai_briefing_store.recent_runs(brand_id, limit)
+    return {"brand_id": brand_id, "runs": [
+        {k: r.get(k) for k in ("run_id", "date", "trigger", "status", "sections", "error",
+                               "queued_at", "started_at", "finished_at", "duration_ms",
+                               "usage")} for r in runs]}
 
 
 if __name__ == "__main__":

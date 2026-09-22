@@ -1,0 +1,1119 @@
+{
+  "info": {
+    "_postman_id": "5b0f7e3a-2c1d-4e9b-8a51-aibriefings0001",
+    "name": "ScaleSerum — AI Briefings",
+    "description": "The Briefings page: All, Sales Team, Ads & Marketing, WhatsApp and Leads, one stored briefing per brand and day.\n\nSETUP\n1. Start the API:  PORT=3011 python app.py\n2. Open this collection's Variables tab and paste your API_KEY (from .env) into `apiKey`.\n3. Run the whole collection IN ORDER. Request 2 generates DI's yesterday with real scrumdb data and real Gemini (about 30 s); request 3 polls until it is done; the rest read it back.\n\nWHAT TO LOOK FOR\nAds: blended ROAS is payments received / spend (never 0x from empty platform revenue), and campaign ROAS is labelled Meta-reported. Requests 13-17 check viewer scoping: a rep without team view sees only their own row and only their tabs.\n\nGeneration writes only this service's own MongoDB collections (ai_briefings, ai_briefing_runs). scrumdb is read-only.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "X-API-Key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{apiKey}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:3011",
+      "type": "string"
+    },
+    {
+      "key": "apiKey",
+      "value": "",
+      "type": "string",
+      "description": "PASTE YOUR KEY HERE. Value of API_KEY in .env."
+    },
+    {
+      "key": "brandId",
+      "value": "bee79bff-d5f6-4220-a7d4-7a04bf173e59",
+      "type": "string",
+      "description": "DI (the ICDP brand)."
+    },
+    {
+      "key": "repUserId",
+      "value": "postman-rep-without-team-view",
+      "type": "string"
+    },
+    {
+      "key": "runId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "briefingDate",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "briefingId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "pollCount",
+      "value": "0",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Health (no auth required)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        },
+        "auth": {
+          "type": "noauth"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('feature available', () => pm.expect(b.ai_briefings.available).to.eql(true));",
+              "pm.test('storage configured', () => pm.expect(b.ai_briefings.storage).to.eql('configured'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Auth - wrong key returns 401",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/today",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "today"
+          ]
+        },
+        "auth": {
+          "type": "apikey",
+          "apikey": [
+            {
+              "key": "key",
+              "value": "X-API-Key",
+              "type": "string"
+            },
+            {
+              "key": "value",
+              "value": "wrong-key",
+              "type": "string"
+            },
+            {
+              "key": "in",
+              "value": "header",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('401', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Generate - DI's yesterday (202, queued)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/generate",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "generate"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('202 Accepted', () => pm.response.to.have.status(202));",
+              "const b = pm.response.json();",
+              "pm.test('one run queued', () => { pm.expect(b.runs).to.have.lengthOf(1); pm.expect(b.runs[0].status).to.eql('queued'); });",
+              "pm.test('timezone resolved from brands.timezone', () => pm.expect(b.timezone.name).to.be.a('string'));",
+              "pm.collectionVariables.set('runId', b.runs[0].run_id);",
+              "pm.collectionVariables.set('briefingDate', b.runs[0].date);",
+              "pm.collectionVariables.set('pollCount', 0);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Runs - wait for the run to finish",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/runs?limit=5",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "runs"
+          ],
+          "query": [
+            {
+              "key": "limit",
+              "value": "5"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "setTimeout(() => {}, 5000);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const run = pm.response.json().runs.find(r => r.run_id === pm.collectionVariables.get('runId'));",
+              "const n = Number(pm.collectionVariables.get('pollCount') || 0) + 1;",
+              "pm.collectionVariables.set('pollCount', n);",
+              "if (run && ['queued','running'].includes(run.status) && n < 40) {",
+              "  postman.setNextRequest(pm.info.requestName);   // poll again (pre-request waits 5 s)",
+              "} else {",
+              "  pm.test('run completed', () => pm.expect(run && run.status).to.eql('completed'));",
+              "  pm.test('all five sections recorded', () => pm.expect(Object.keys(run.sections).sort()).to.eql(['ads','all','leads','sales','whatsapp']));",
+              "  pm.test('token usage recorded', () => pm.expect(run.usage).to.be.an('object'));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Today - All sections",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/today?section=all&date={{briefingDate}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "today"
+          ],
+          "query": [
+            {
+              "key": "section",
+              "value": "all"
+            },
+            {
+              "key": "date",
+              "value": "{{briefingDate}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('the generated day, not a stale one', () => { pm.expect(b.date).to.eql(pm.collectionVariables.get('briefingDate')); pm.expect(b.stale).to.eql(false); });",
+              "pm.test('summary has a label and text', () => { pm.expect(b.summary.label).to.be.a('string').and.not.empty; pm.expect(b.summary.text).to.be.a('string').and.not.empty; });",
+              "pm.test('five tabs listed for a service call', () => pm.expect(b.tabs.map(t => t.section)).to.eql(['all','sales','ads','whatsapp','leads']));",
+              "pm.test('wording source recorded', () => pm.expect(['llm','template','none','composed']).to.include(b.wording.source));",
+              "pm.test('blocks for the Read more modal', () => pm.expect(b.blocks).to.be.an('array'));",
+              "pm.test('All label', () => pm.expect(b.summary.label).to.eql('Across all sections yesterday'));",
+              "pm.test('at most 3 watch items', () => pm.expect(b.watch.length).to.be.at.most(3));",
+              "pm.test('score card carried on every tab', () => pm.expect(b).to.have.property('score_card'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Today - Sales Team",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/today?section=sales&date={{briefingDate}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "today"
+          ],
+          "query": [
+            {
+              "key": "section",
+              "value": "sales"
+            },
+            {
+              "key": "date",
+              "value": "{{briefingDate}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('the generated day, not a stale one', () => { pm.expect(b.date).to.eql(pm.collectionVariables.get('briefingDate')); pm.expect(b.stale).to.eql(false); });",
+              "pm.test('summary has a label and text', () => { pm.expect(b.summary.label).to.be.a('string').and.not.empty; pm.expect(b.summary.text).to.be.a('string').and.not.empty; });",
+              "pm.test('five tabs listed for a service call', () => pm.expect(b.tabs.map(t => t.section)).to.eql(['all','sales','ads','whatsapp','leads']));",
+              "pm.test('wording source recorded', () => pm.expect(['llm','template','none','composed']).to.include(b.wording.source));",
+              "pm.test('blocks for the Read more modal', () => pm.expect(b.blocks).to.be.an('array'));",
+              "pm.test('sales section', () => pm.expect(b.section).to.eql('sales'));",
+              "if (b.available) { pm.test('score card with window', () => pm.expect(b.score_card.window_days).to.eql(7)); }"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Today - Ads & Marketing",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/today?section=ads&date={{briefingDate}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "today"
+          ],
+          "query": [
+            {
+              "key": "section",
+              "value": "ads"
+            },
+            {
+              "key": "date",
+              "value": "{{briefingDate}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('the generated day, not a stale one', () => { pm.expect(b.date).to.eql(pm.collectionVariables.get('briefingDate')); pm.expect(b.stale).to.eql(false); });",
+              "pm.test('summary has a label and text', () => { pm.expect(b.summary.label).to.be.a('string').and.not.empty; pm.expect(b.summary.text).to.be.a('string').and.not.empty; });",
+              "pm.test('five tabs listed for a service call', () => pm.expect(b.tabs.map(t => t.section)).to.eql(['all','sales','ads','whatsapp','leads']));",
+              "pm.test('wording source recorded', () => pm.expect(['llm','template','none','composed']).to.include(b.wording.source));",
+              "pm.test('blocks for the Read more modal', () => pm.expect(b.blocks).to.be.an('array'));",
+              "pm.test('ads section available for DI', () => pm.expect(b.available).to.eql(true));",
+              "pm.test('revenue is payments received, not platform revenue', () => pm.expect(b.kpis.revenue.basis).to.eql('payments received'));",
+              "pm.test('blended ROAS is a ratio, never a bare 0', () => pm.expect(b.kpis.blended_roas.display).to.match(/\\u00d7$/));",
+              "pm.test('platform ROAS is labelled as the platform\\'s', () => pm.expect(b.facts.platform_roas_basis).to.include('reported by the ad platform'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Today - WhatsApp",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/today?section=whatsapp&date={{briefingDate}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "today"
+          ],
+          "query": [
+            {
+              "key": "section",
+              "value": "whatsapp"
+            },
+            {
+              "key": "date",
+              "value": "{{briefingDate}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('the generated day, not a stale one', () => { pm.expect(b.date).to.eql(pm.collectionVariables.get('briefingDate')); pm.expect(b.stale).to.eql(false); });",
+              "pm.test('summary has a label and text', () => { pm.expect(b.summary.label).to.be.a('string').and.not.empty; pm.expect(b.summary.text).to.be.a('string').and.not.empty; });",
+              "pm.test('five tabs listed for a service call', () => pm.expect(b.tabs.map(t => t.section)).to.eql(['all','sales','ads','whatsapp','leads']));",
+              "pm.test('wording source recorded', () => pm.expect(['llm','template','none','composed']).to.include(b.wording.source));",
+              "pm.test('blocks for the Read more modal', () => pm.expect(b.blocks).to.be.an('array'));",
+              "pm.test('available, or says WhatsApp is not connected', () => { if (!b.available) pm.expect(b.reason).to.eql('whatsapp_not_connected'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Today - Leads",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/today?section=leads&date={{briefingDate}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "today"
+          ],
+          "query": [
+            {
+              "key": "section",
+              "value": "leads"
+            },
+            {
+              "key": "date",
+              "value": "{{briefingDate}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('the generated day, not a stale one', () => { pm.expect(b.date).to.eql(pm.collectionVariables.get('briefingDate')); pm.expect(b.stale).to.eql(false); });",
+              "pm.test('summary has a label and text', () => { pm.expect(b.summary.label).to.be.a('string').and.not.empty; pm.expect(b.summary.text).to.be.a('string').and.not.empty; });",
+              "pm.test('five tabs listed for a service call', () => pm.expect(b.tabs.map(t => t.section)).to.eql(['all','sales','ads','whatsapp','leads']));",
+              "pm.test('wording source recorded', () => pm.expect(['llm','template','none','composed']).to.include(b.wording.source));",
+              "pm.test('blocks for the Read more modal', () => pm.expect(b.blocks).to.be.an('array'));",
+              "pm.test('new leads KPI', () => pm.expect(b.kpis.new_leads.value).to.be.a('number'));",
+              "pm.test('hot leads come from the purchase-probability model', () => pm.expect(b.facts.hot_untouched).to.have.property('scored'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "9. Score - Consolidated Score card and reps",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/score?date={{briefingDate}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "score"
+          ],
+          "query": [
+            {
+              "key": "date",
+              "value": "{{briefingDate}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('team view for a service call', () => pm.expect(b.team_view).to.eql(true));",
+              "pm.test('reps is a list', () => pm.expect(b.reps).to.be.an('array'));",
+              "if (b.available) { pm.test('score out of 100 with its basis', () => { pm.expect(b.score_card.score_max).to.eql(100); pm.expect(b.score_card.basis.closures).to.include('last rep'); }); }"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "10. History - Past Briefings",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/history?section=all&limit=5",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "history"
+          ],
+          "query": [
+            {
+              "key": "section",
+              "value": "all"
+            },
+            {
+              "key": "limit",
+              "value": "5"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('has items, newest first', () => { pm.expect(b.items.length).to.be.above(0); const d = b.items.map(i => i.date); pm.expect(d).to.eql([...d].sort().reverse()); });",
+              "pm.test('each item has a section label and summary', () => b.items.forEach(i => { pm.expect(i.section_label).to.be.a('string'); pm.expect(i.summary).to.be.a('string'); }));",
+              "pm.collectionVariables.set('briefingId', b.items[0].briefing_id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "11. Briefing - the Read more modal",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/briefing/{{briefingId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "briefing",
+            "{{briefingId}}"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('same briefing', () => pm.expect(b.briefing_id).to.eql(pm.collectionVariables.get('briefingId')));",
+              "pm.test('blocks with titles and bullets', () => b.blocks.forEach(x => { pm.expect(x.title).to.be.a('string'); pm.expect(x.bullets.length).to.be.above(0); }));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "12. Latest - dashboard header card",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/latest",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "latest"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('available with a summary', () => { pm.expect(b.available).to.eql(true); pm.expect(b.summary.text).to.not.be.empty; });",
+              "pm.test('says whether it is stale', () => pm.expect(b.stale).to.be.a('boolean'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "13. Viewer - rep without team view sees only their own row",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{repUserId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "user"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "briefings,sales_calls,crm"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/today?section=sales&date={{briefingDate}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "today"
+          ],
+          "query": [
+            {
+              "key": "section",
+              "value": "sales"
+            },
+            {
+              "key": "date",
+              "value": "{{briefingDate}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('no team view', () => pm.expect(b.viewer.team_view).to.eql(false));",
+              "pm.test('tabs limited to sales + leads', () => pm.expect(b.tabs.map(t => t.section)).to.eql(['all','sales','leads']));",
+              "pm.test('no colleague rows', () => (b.reps || []).forEach(r => pm.expect(r.user_id).to.eql(pm.collectionVariables.get('repUserId'))));",
+              "pm.test('no top performer named', () => pm.expect(b.summary.top || '').to.eql(''));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "14. Viewer - rep's All tab is composed from their sections only",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{repUserId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "user"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "briefings,sales_calls,crm"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/today?section=all&date={{briefingDate}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "today"
+          ],
+          "query": [
+            {
+              "key": "section",
+              "value": "all"
+            },
+            {
+              "key": "date",
+              "value": "{{briefingDate}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('no Ads or WhatsApp content', () => { const keys = b.blocks.map(x => x.key); pm.expect(keys).to.not.include('ads'); pm.expect(keys).to.not.include('whatsapp'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "15. Viewer - rep asking for Ads is refused (403)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{repUserId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "user"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "briefings,sales_calls,crm"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/today?section=ads",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "today"
+          ],
+          "query": [
+            {
+              "key": "section",
+              "value": "ads"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('403', () => pm.response.to.have.status(403));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "16. Viewer - no 'briefings' permission (403)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{repUserId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "user"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "crm,sales_calls"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/today",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "today"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('403', () => pm.response.to.have.status(403));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "17. Generate - refused for a non super admin (403)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{repUserId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "user"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "briefings,sales_calls,crm"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/generate",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "generate"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('403', () => pm.response.to.have.status(403));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "18. Generate - a day that is not over yet (422)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/generate?date=2099-01-01",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "generate"
+          ],
+          "query": [
+            {
+              "key": "date",
+              "value": "2099-01-01"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('422', () => pm.response.to.have.status(422));",
+              "pm.test('says why', () => pm.expect(pm.response.json().detail).to.include('yesterday'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "19. Generate - unknown brand (404)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/00000000-0000-4000-8000-000000000000/generate",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "00000000-0000-4000-8000-000000000000",
+            "generate"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('404', () => pm.response.to.have.status(404));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "20. Today - unknown brand is not generated (200, available false)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/00000000-0000-4000-8000-000000000000/today",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "00000000-0000-4000-8000-000000000000",
+            "today"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('not_generated', () => { pm.expect(b.available).to.eql(false); pm.expect(b.reason).to.eql('not_generated'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "21. Validation - bad section (422)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/today?section=billing",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "today"
+          ],
+          "query": [
+            {
+              "key": "section",
+              "value": "billing"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('422', () => pm.response.to.have.status(422));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "22. Validation - bad date (422)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/today?date=21-09-2026",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "today"
+          ],
+          "query": [
+            {
+              "key": "date",
+              "value": "21-09-2026"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('422', () => pm.response.to.have.status(422));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "23. Validation - brand id not a UUID (422)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/not-a-uuid/today",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "not-a-uuid",
+            "today"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('422', () => pm.response.to.have.status(422));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "24. Briefing - unknown id (404)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/briefing/nope",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "briefing",
+            "nope"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('404', () => pm.response.to.have.status(404));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
