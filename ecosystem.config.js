@@ -23,5 +23,20 @@ module.exports = {
     cwd: "/root/Marketing_tool",
     kill_timeout: 120000,
     autorestart: true
+  }, {
+    // AI Briefings' daily generator. Every few minutes it checks each brand's
+    // local clock and, once it passes the generation hour, briefs yesterday -
+    // once per brand and day. Network-bound (scrumdb + Gemini), so it is light.
+    //
+    // kill_timeout: on a deploy it finishes the brand in flight (about a
+    // minute: a day's queries plus five Gemini calls) instead of being killed
+    // halfway; a run cut off anyway is retried on the next pass.
+    name: "briefing-worker",
+    script: "./venv/bin/python",
+    args: "-m ai_briefings.worker",
+    interpreter: "none",
+    cwd: "/root/Marketing_tool",
+    kill_timeout: 90000,
+    autorestart: true
   }]
 }

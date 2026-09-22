@@ -158,7 +158,7 @@ release() {
   pm2 save --force >/dev/null 2>&1 || true
 }
 
-# Restart the Vision Lab worker - a second pm2 process - onto the new code.
+# Restart the worker processes - Vision Lab and AI Briefings - onto the new code.
 #
 # Without this the worker keeps running the PREVIOUS release: the API moves on,
 # the worker does not, and a fix that lives in the worker ships and changes
@@ -183,19 +183,22 @@ for p in procs:
     if isinstance(args, str):
         args = [args]
     runs = " ".join([str(env.get("pm_exec_path") or "")] + [str(a) for a in args])
-    if "vision_lab.worker" in runs or "vision_lab/worker" in runs:
+    if any(w in runs for w in ("vision_lab.worker", "vision_lab/worker",
+                                "ai_briefings.worker", "ai_briefings/worker")):
         found.append(str(p.get("pm_id")))
 print(" ".join(found))
 ' 2>/dev/null || true)"
 
   if [ -z "$ids" ]; then
-    log "No Vision Lab worker is registered in pm2 - nothing to restart"
-    echo "WARNING: Vision Lab analyses will stay queued until a worker runs. Start it once with:" >&2
+    log "No worker is registered in pm2 - nothing to restart"
+    echo "WARNING: Vision Lab analyses stay queued and daily briefings are not generated until" >&2
+    echo "         the workers run. Start them once with:" >&2
     echo "         pm2 start ecosystem.config.js --only vision-worker && pm2 save" >&2
+    echo "         pm2 start ecosystem.config.js --only briefing-worker && pm2 save" >&2
     return 0
   fi
   for id in $ids; do
-    log "Restarting Vision Lab worker (pm2 id $id)"
+    log "Restarting worker (pm2 id $id)"
     pm2 restart "$id" --update-env || echo "WARNING: could not restart worker $id" >&2
   done
   pm2 save --force >/dev/null 2>&1 || true

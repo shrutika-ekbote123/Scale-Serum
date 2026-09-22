@@ -1,0 +1,72 @@
+{
+  "config_version": "briefings_v1",
+
+  "generation": {
+    "local_hour": 7,
+    "max_attempts_per_day": 3,
+    "backfill_max_days": 30
+  },
+
+  "sections": {
+    "all":      {"label": "All sections",      "summary_label": "Across all sections yesterday"},
+    "sales":    {"label": "Sales Team",        "summary_label": "Sales team"},
+    "ads":      {"label": "Ads & Marketing",   "summary_label": "Ads & Marketing"},
+    "whatsapp": {"label": "WhatsApp",          "summary_label": "WhatsApp"},
+    "leads":    {"label": "Leads",             "summary_label": "Leads"}
+  },
+
+  "ads": {
+    "min_campaign_spend": 2000,
+    "roas_threshold": 3.0,
+    "cpl_spike_ratio": 1.25,
+    "cpl_min_leads": 3,
+    "overspend_ratio": 1.25,
+    "top_campaigns": 3,
+    "creative_range_key": "30d"
+  },
+
+  "leads": {
+    "hot_lookback_days": 7,
+    "untouched_hours": 24,
+    "hot_priorities": ["High"],
+    "hot_lead_ids_returned": 10,
+    "funnel_lookback_days": 30,
+    "funnel_min_leads": 30,
+    "drop_ratio": 0.7
+  },
+
+  "sales": {
+    "window_days": 7,
+    "closure_credit_days": 30,
+    "min_calls_for_ranking": 2,
+    "score_drop_points": 5,
+    "callback_grace_hours": 2
+  },
+
+  "whatsapp": {
+    "awaiting_reply_days": 7,
+    "reply_to_sql_days": 7
+  },
+
+  "demo_data": {
+    "_note": "Rows the seeding scripts wrote into scrumdb. Excluded until the Node app team deletes them.",
+    "sales_call_rep_names": ["Priya Sharma", "Rajan Kumar", "Sneha Iyer", "Vivek Joshi", "Arjun Mehta"]
+  },
+
+  "severity_rank": {"high": 0, "medium": 1, "low": 2},
+
+  "watch_templates": {
+    "roas_below_threshold": "{campaign} returned {roas} Meta-reported ROAS on {spend} over 7 days (threshold {threshold}).",
+    "cpl_spike":            "{campaign} cost per lead rose to {cpl}, {change} above its 7-day average of {cpl_avg}.",
+    "overspend":            "{campaign} spent {spend} against a {budget} daily budget.",
+    "spend_no_leads":       "{campaign} spent {spend} and produced no leads.",
+    "source_stale":         "{platform} data has not updated since {last_date}.",
+    "hot_untouched":        "{count} high-intent leads have had no call or WhatsApp for over {hours} hours.",
+    "leads_drop":           "New leads fell to {count}, down from {previous} on the same day last week.",
+    "missed_callbacks":     "{count} promised callbacks were missed ({reps}).",
+    "score_drop":           "Team call score fell {points} points to {score}/100 week on week.",
+    "no_calls":             "No sales calls were logged in the last {days} days while {leads} new leads arrived.",
+    "awaiting_reply":       "{count} WhatsApp conversations are waiting for a reply.",
+    "broadcast_failed":     "{count} WhatsApp messages failed in yesterday's broadcasts."
+  }
+}

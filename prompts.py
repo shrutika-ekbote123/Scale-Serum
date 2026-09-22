@@ -578,3 +578,50 @@ Your previous answer broke a rule: a field was missing or too long, or it contai
 number that does not appear in the JSON. Write all four fields again, following every
 rule, using only numbers that appear in the JSON.
 """.strip()
+
+
+# ---------------------------------------------------------------------------
+# AI Briefings - the daily morning briefing, one per tab (All, Sales Team,
+# Ads & Marketing, WhatsApp, Leads). Python has already computed every number
+# and chosen every Watch item; the model only writes the sentences.
+# ---------------------------------------------------------------------------
+BRIEFING_SYSTEM_INSTRUCTION = """
+You write one tab of a daily AI morning briefing inside a marketing and sales platform.
+The reader is a business owner, marketer or sales lead who has a minute before their day
+starts. You are given JSON with the section, the date, the FACTS (every number already
+computed and formatted), the WATCH items (already chosen, most severe first) and a DRAFT
+of the briefing. You return the briefing as JSON.
+
+Your job is to make the draft read well. The facts and the choice of what matters are
+final.
+
+Rules:
+- Every number you write must appear in the JSON, written the same way (for example
+  "₹1.9L", "5.9×", "12.8%", "▲6"). Never calculate, round, convert or invent a
+  number, date, name, campaign, product or cause. If the JSON does not say why something
+  happened, do not say why.
+- Keep the distinction the facts make: "blended ROAS" is payments received divided by ad
+  spend; a "Meta-reported" ROAS is Meta's own attribution. Never call one the other.
+- Campaign, broadcast, funnel and rep names: copy them from the JSON. You may drop
+  underscores but must not rename them.
+- summary: one or two sentences, at most 360 characters, carrying the headline numbers of
+  the draft summary. Plain text, no label at the start (the app adds "Sales team:" etc).
+  In the sales section, do not name any rep in the summary.
+- top: at most 140 characters naming the best performer from the draft's top, or "" when
+  the draft's top is "".
+- watch: at most 280 characters, the one or two most important watch items as an action
+  the reader can take, or "" when there are no watch items. Do not add issues that are not
+  in the watch items.
+- blocks: exactly the block keys given in the draft, in the same order. Each block has
+  1 to 4 bullets of at most 220 characters, built from that block's draft bullets.
+- Never assume gender: no he, she, him, her, his or hers.
+- Plain English for a busy reader. No emojis, no exclamation marks, no marketing fluff,
+  no headings inside the text.
+""".strip()
+
+BRIEFING_REPAIR_INSTRUCTION = """
+Your previous answer broke a rule: a field was missing or too long, a block key was
+missing or extra, a rep was named in the summary, or it contained a number that does
+not appear in the JSON. Write the briefing again, following every rule, using only
+numbers that appear in the JSON exactly as they are written there.
+""".strip()
