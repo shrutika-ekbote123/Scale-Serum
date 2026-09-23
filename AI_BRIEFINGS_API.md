@@ -101,7 +101,8 @@ Base URL: local `http://127.0.0.1:3011` · production `https://api.scaleserum.co
 | `GET /api/ai-briefings/briefing/{briefingId}` | One briefing in full (the Read more modal) |
 | `GET /api/ai-briefings/{brandId}/latest` | Compact All briefing for the Dashboard header card |
 | `POST /api/ai-briefings/{brandId}/generate?date=&days=1` | **Super admin only.** (Re)generate now; `days=30` backfills Past Briefings for a new brand. Returns **202** with queued runs |
-| `GET /api/ai-briefings/{brandId}/runs?limit=20` | Generation runs and their status (for the admin action above) |
+| `GET /api/ai-briefings/{brandId}/runs?limit=20` | Generation runs, their status, tokens and cost |
+| `GET /api/ai-briefings/{brandId}/usage?from=&to=` | Tokens used and estimated Gemini spend over a date range |
 
 ### 2.4 Response: `today` (real, DI, Ads tab, trimmed)
 
@@ -178,7 +179,57 @@ extra UI, and it's what the AI was allowed to quote.
 }
 ```
 
-### 2.6 Status codes
+### 2.6 Tokens and cost
+
+Every briefing records the tokens its Gemini call used and what they cost **at the rates
+in force when it ran**, so changing `billing/pricing.json` later never rewrites an old
+bill. Three places show it:
+
+- **Per briefing** — `today` and `briefing/{id}` return `usage` (token counts plus
+  `total_tokens`) and `cost` (USD, INR, the rates used, and the caveats).
+- **Per run** — `runs` returns `usage` and `cost` totals for all five tabs of that day.
+- **Per range** — `usage` sums it up:
+
+```
+GET /api/ai-briefings/{brandId}/usage?from=2026-09-01&to=2026-09-30
+```
+
+```json
+{
+  "from": "2026-09-01", "to": "2026-09-30", "days_with_briefings": 2,
+  "totals": {"input_tokens": 17732, "output_tokens": 3465, "thinking_tokens": 10245,
+             "cached_tokens": 0, "total_tokens": 31442,
+             "briefings": 10, "llm_calls": 10, "cost_usd": 0.064713, "cost_inr": 5.69},
+  "wording": {"llm": 10},
+  "unpriced_briefings": 0,
+  "per_day":     [{"date": "2026-09-22", "total_tokens": 16497, "cost_usd": 0.034918, "…": "…"}],
+  "per_section": [{"section": "ads", "total_tokens": 11321, "cost_usd": 0.021904, "…": "…"}],
+  "per_model":   [{"model": "gemini-flash-latest", "model_priced": "gemini-3.8-flash",
+                   "alias_confirmed": false, "rate_confirmed": true,
+                   "rate_input_per_1m_usd": 0.75, "rate_output_per_1m_usd": 3.75,
+                   "total_tokens": 31442, "cost_usd": 0.064713}],
+  "averages": {"per_briefing_usd": 0.006471, "per_day_usd": 0.032357,
+               "projected_30_days_usd": 0.9707, "basis": "days with at least one briefing…"},
+  "pricing": {"version": "2026-09-15.1", "usd_to_inr": 88, "fx_fixed_rate": true},
+  "estimated": true,
+  "notes": ["fx_fixed_rate", "gemini_alias_unconfirmed"]
+}
+```
+
+- `from` defaults to 29 days before `to`; `to` defaults to today. Maximum range 366 days.
+- Days are the days each briefing is **for**, so they line up with what the page shows.
+- **Real cost:** about **$0.035 (₹3.07) per brand per day** — 5 Gemini calls, roughly 16K
+  tokens. Around **$1 per brand per month**. Thinking tokens are billed as output.
+- A tab with no data (WhatsApp not connected) makes no call, so it costs nothing, and
+  template wording from an outage costs nothing either. `wording` shows the split.
+- **Everything is an estimate.** `notes` names every caveat: `gemini_alias_unconfirmed`
+  (`gemini-flash-latest` is priced as `gemini-3.8-flash`), `gemini_rate_unconfirmed`,
+  `fx_fixed_rate` (the team's fixed ₹88/USD, not a live rate), `unpriced_briefings` (a
+  model with no configured rate: its tokens are counted, its cost isn't) and
+  `legacy_cost_usd_only_inr_converted_at_current_rate`.
+- Rates live in `billing/pricing.json`, shared with the Sales Call Analyzer's bill.
+
+### 2.7 Status codes
 
 | Code | When |
 |---|---|
@@ -194,19 +245,19 @@ extra UI, and it's what the AI was allowed to quote.
 `whatsapp_not_connected`, `no_sales_calls`, `no_ad_accounts`, `no_leads`, `no_data`,
 `section_error`.
 
-### 2.7 Timing and caching
+### 2.8 Timing and caching
 
 - **Reads** are Mongo lookups: typically 100–500 ms. Cache per brand + day + tab if you
   like; a day's briefing only changes if someone regenerates it.
 - **Generation** takes about 15–40 s per brand-day (scrumdb queries, hot-lead scoring,
   5 Gemini calls). It's always in the background. Never call `generate` on page load.
 
-### 2.8 Testing
+### 2.9 Testing
 
 Postman: `postman/ScaleSerum-AIBriefings.postman_collection.json`. Paste your API key
 into `apiKey` and run it in order. Request 2 generates DI's yesterday for real, and the
-rest read it back. It covers the viewer rules and every error case: 25 requests,
-94 assertions, all passing on 22 Sep 2026.
+rest read it back. It covers the viewer rules, token/cost reporting and every error case:
+29 requests, 106 assertions, all passing on 23 Sep 2026.
 
 ---
 

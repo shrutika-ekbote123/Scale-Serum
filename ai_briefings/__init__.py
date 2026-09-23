@@ -22,8 +22,10 @@ from .access import Viewer, viewer_from  # noqa: F401
 from .config import ALL_SECTIONS, SECTIONS, load_config  # noqa: F401
 from .service import BriefingDeps, generate_day, new_run_id  # noqa: F401
 from .store import BriefingStore, briefing_id  # noqa: F401
+from .usage import summarize as summarize_usage  # noqa: F401
 from .writer import PROMPT_VERSION  # noqa: F401
 
 __all__ = ["Viewer", "viewer_from", "ALL_SECTIONS", "SECTIONS", "load_config",
            "BriefingDeps", "generate_day", "new_run_id", "BriefingStore", "briefing_id",
+           "summarize_usage",
            "PROMPT_VERSION"]

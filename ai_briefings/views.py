@@ -98,7 +98,7 @@ def shape(doc: dict, *, viewer: Viewer, requested: Optional[str], stale: bool,
     keep = ("briefing_id", "brand_id", "brand_name", "date", "date_label", "short_label",
             "section", "section_label", "available", "reason", "message", "summary", "blocks",
             "watch", "kpis", "score_card", "reps", "timezone", "data_as_of", "wording",
-            "fallback", "generated_at", "versions")
+            "fallback", "generated_at", "versions", "usage", "cost")
     out = {k: doc.get(k) for k in keep}
     out["facts"] = doc.get("facts")
     out["requested_date"] = requested
