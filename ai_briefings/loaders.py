@@ -38,24 +38,52 @@ def brand_brain_loader(collection):
 
 
 def usage_pricer(model: str):
-    """Gemini cost in USD from token counts, via billing/pricing.json. None when
-    billing is unavailable or the model is unpriced - never an invented rate."""
+    """What one section's Gemini call cost, via billing/pricing.json.
+
+    Returns the rates it used and the caveats that apply, not just a number:
+    an unconfirmed alias or rate, and the fixed USD->INR rate, are named on
+    every briefing. `usd` is None when the model is unpriced - never an
+    invented rate. None (no pricer) when billing itself is unavailable."""
     try:
         import billing
+        from billing.cost import (NOTE_FX_FIXED_RATE, NOTE_GEMINI_ALIAS_UNCONFIRMED,
+                                  NOTE_GEMINI_RATE_UNCONFIRMED, gemini_cost)
         pricing = billing.load_pricing()
-        from billing.cost import gemini_cost
     except Exception:  # noqa: BLE001
         return None
 
-    def price(usage: dict, attempts: int) -> Optional[float]:
+    fx_cfg = pricing.get("fx") or {}
+    fx = fx_cfg.get("usd_to_inr")
+
+    def price(usage: dict, attempts: int) -> Optional[dict]:
         if not attempts:
             return None
         try:
-            return gemini_cost(pricing, model_requested=model, attempts=attempts,
+            cost = gemini_cost(pricing, model_requested=model, attempts=attempts,
                                input_tokens=usage.get("input_tokens"),
                                output_tokens=usage.get("output_tokens"),
                                thinking_tokens=usage.get("thinking_tokens"),
-                               cached_tokens=usage.get("cached_tokens")).usd
+                               cached_tokens=usage.get("cached_tokens"))
         except Exception:  # noqa: BLE001
             return None
+        notes = []
+        if cost.alias_confirmed is False:
+            notes.append(NOTE_GEMINI_ALIAS_UNCONFIRMED)
+        if cost.rate_confirmed is False:
+            notes.append(NOTE_GEMINI_RATE_UNCONFIRMED)
+        if fx and fx_cfg.get("fixed_rate", True):
+            notes.append(NOTE_FX_FIXED_RATE)
+        return {
+            "usd": cost.usd,
+            "inr": round(cost.usd * fx, 4) if cost.usd is not None and fx else None,
+            "attempts": cost.attempts,
+            "model_requested": cost.model_requested, "model_priced": cost.model_priced,
+            "alias_confirmed": cost.alias_confirmed, "rate_confirmed": cost.rate_confirmed,
+            "rate_effective_from": cost.rate_effective_from,
+            "rate_input_per_1m_usd": cost.rate_input_per_1m_usd,
+            "rate_output_per_1m_usd": cost.rate_output_per_1m_usd,
+            "rate_cached_input_per_1m_usd": cost.rate_cached_input_per_1m_usd,
+            "usd_to_inr": fx, "pricing_version": pricing.get("pricing_version"),
+            "estimated": True, "reason": cost.reason, "notes": notes,
+        }
     return price

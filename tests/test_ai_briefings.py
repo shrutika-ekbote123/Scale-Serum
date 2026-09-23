@@ -690,3 +690,121 @@ def test_ads_stale_source_explains_missing_spend():
     out = BUILDERS["ads"](raw, ctx())
     assert out["template"]["summary"] == ("No ad spend was recorded yesterday: "
                                           "Meta data has not updated since 8 Jul.")
+
+
+# ----------------------------------------------------------------- token usage
+def priced_deps(store, raw, client):
+    deps = make_deps(store, raw, llm_client=client)
+    from ai_briefings.loaders import usage_pricer
+    deps.price_usage = usage_pricer("gemini-flash-latest")
+    return deps
+
+
+class Meter:
+    """A Gemini fake that echoes the draft and reports token usage."""
+
+    def __init__(self, tokens=(1000, 200, 100)):
+        self.aio = self
+        self.models = self
+        self.calls = 0
+        self.tokens = tokens
+
+    async def generate_content(self, *, model, contents, config):
+        self.calls += 1
+        payload = json.loads(contents)
+        response = FakeResponse(json.dumps(writer.template_wording(payload), ensure_ascii=False))
+
+        class Usage:
+            prompt_token_count, candidates_token_count, thoughts_token_count = self.tokens
+            cached_content_token_count = None
+
+        response.usage_metadata = Usage()
+        return response
+
+
+def priced_store():
+    store = make_store()
+    raw = ads_raw(leads=leads_on(DAY, 24))
+    client = Meter()
+    run(ab.generate_day(BRAND, priced_deps(store, raw, client), day=DAY))
+    return store, client
+
+
+def test_briefing_records_tokens_and_cost():
+    store, client = priced_store()
+    ads = store.briefings.docs[ab.briefing_id(BRAND, "2026-09-21", "ads")]
+    assert ads["usage"] == {"input_tokens": 1000, "output_tokens": 200,
+                            "thinking_tokens": 100, "total_tokens": 1300}
+    cost = ads["cost"]
+    assert cost["usd"] == pytest.approx(0.001875)       # 1000 in + 300 out at flash rates
+    assert cost["inr"] == pytest.approx(0.165)          # fixed 88/USD from pricing.json
+    assert cost["model_priced"] and cost["estimated"] is True
+    assert ads["cost_usd"] == cost["usd"]
+    # An unavailable tab makes no call, so it costs nothing.
+    whatsapp = store.briefings.docs[ab.briefing_id(BRAND, "2026-09-21", "whatsapp")]
+    assert whatsapp["usage"] == {} and whatsapp["cost"] is None
+
+
+def test_run_totals_add_up_across_sections():
+    store, client = priced_store()
+    doc = next(iter(store.runs.docs.values()))
+    assert doc["usage"]["input_tokens"] == 1000 * client.calls
+    assert doc["usage"]["total_tokens"] == 1300 * client.calls
+    assert doc["cost"]["llm_calls"] == client.calls
+    assert doc["cost"]["usd"] == pytest.approx(0.001875 * client.calls)
+
+
+def test_usage_summary_totals_and_breakdowns():
+    store, client = priced_store()
+    docs = run(store.usage_between(BRAND, "2026-09-01", "2026-09-30"))
+    import billing
+    out = ab.summarize_usage(docs, brand_id=BRAND, start="2026-09-01", end="2026-09-30",
+                             pricing=billing.load_pricing())
+    assert out["totals"]["briefings"] == client.calls
+    assert out["totals"]["total_tokens"] == 1300 * client.calls
+    assert out["totals"]["cost_usd"] == pytest.approx(0.001875 * client.calls)
+    assert out["days_with_briefings"] == 1
+    assert out["per_day"][0]["date"] == "2026-09-21"
+    assert {s["section"] for s in out["per_section"]} == {"ads", "leads", "all"}
+    assert out["averages"]["per_briefing_usd"] == pytest.approx(0.001875)
+    assert out["averages"]["projected_30_days_usd"] == pytest.approx(
+        0.001875 * client.calls * 30, abs=1e-4)      # the projection is rounded to 4 dp
+    assert out["per_model"][0]["model"] == "test-model"
+    assert out["pricing"]["usd_to_inr"] == 88
+    assert out["estimated"] is True
+    assert "fx_fixed_rate" in out["notes"]
+
+
+def test_usage_summary_is_empty_without_briefings():
+    out = ab.summarize_usage([], brand_id=BRAND, start="2026-09-01", end="2026-09-30")
+    assert out["totals"]["briefings"] == 0 and out["totals"]["cost_usd"] == 0.0
+    assert out["averages"]["per_briefing_usd"] is None and out["per_day"] == []
+
+
+def test_usage_summary_counts_unpriced_briefings():
+    docs = [{"date": "2026-09-21", "section": "ads", "usage": {"input_tokens": 10},
+             "cost": {"usd": None, "attempts": 1}, "wording": {"source": "llm"},
+             "versions": {"llm_model": "some-new-model"}}]
+    out = ab.summarize_usage(docs, brand_id=BRAND, start="2026-09-01", end="2026-09-30")
+    assert out["unpriced_briefings"] == 1 and "unpriced_briefings" in out["notes"]
+    assert out["totals"]["total_tokens"] == 10 and out["totals"]["cost_usd"] == 0.0
+
+
+def test_api_usage_endpoint(api):
+    c, _ = api
+    r = c.get(f"/api/ai-briefings/{BRAND}/usage?from=2026-09-01&to=2026-09-30", headers=HEADERS)
+    assert r.status_code == 200
+    b = r.json()
+    assert b["from"] == "2026-09-01" and b["to"] == "2026-09-30"
+    assert set(b) >= {"totals", "per_day", "per_section", "per_model", "averages", "pricing",
+                      "notes", "estimated"}
+    assert c.get(f"/api/ai-briefings/{BRAND}/usage?from=2026-09-30&to=2026-09-01",
+                 headers=HEADERS).status_code == 422
+    assert c.get(f"/api/ai-briefings/{BRAND}/usage?from=nope", headers=HEADERS).status_code == 422
+
+
+def test_api_today_exposes_tokens_and_cost(api):
+    c, _ = api
+    b = c.get(f"/api/ai-briefings/{BRAND}/today?section=ads&date=2026-09-21",
+              headers=HEADERS).json()
+    assert "usage" in b and "cost" in b

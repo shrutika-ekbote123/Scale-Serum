@@ -54,6 +54,13 @@ class BriefingStore:
                       .sort("date", -1).to_list(1))
         return docs[0] if docs else None
 
+    async def usage_between(self, brand_id: str, start: str, end: str) -> list[dict]:
+        """Stored briefings in [start, end] with what their wording cost."""
+        return await self.briefings.find(
+            {"brand_id": brand_id, "date": {"$gte": start, "$lte": end}},
+            {"date": 1, "section": 1, "usage": 1, "cost": 1, "cost_usd": 1, "wording": 1,
+             "versions": 1}).to_list(None)
+
     async def history(self, brand_id: str, sections: list[str], before: Optional[str],
                       limit: int) -> list[dict]:
         query: dict = {"brand_id": brand_id, "section": {"$in": sections}}

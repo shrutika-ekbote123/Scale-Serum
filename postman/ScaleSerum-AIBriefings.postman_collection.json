@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "5b0f7e3a-2c1d-4e9b-8a51-aibriefings0001",
     "name": "ScaleSerum — AI Briefings",
-    "description": "The Briefings page: All, Sales Team, Ads & Marketing, WhatsApp and Leads, one stored briefing per brand and day.\n\nSETUP\n1. Start the API:  PORT=3011 python app.py\n2. Open this collection's Variables tab and paste your API_KEY (from .env) into `apiKey`.\n3. Run the whole collection IN ORDER. Request 2 generates DI's yesterday with real scrumdb data and real Gemini (about 30 s); request 3 polls until it is done; the rest read it back.\n\nWHAT TO LOOK FOR\nAds: blended ROAS is payments received / spend (never 0x from empty platform revenue), and campaign ROAS is labelled Meta-reported. Requests 13-17 check viewer scoping: a rep without team view sees only their own row and only their tabs.\n\nGeneration writes only this service's own MongoDB collections (ai_briefings, ai_briefing_runs). scrumdb is read-only.",
+    "description": "The Briefings page: All, Sales Team, Ads & Marketing, WhatsApp and Leads, one stored briefing per brand and day.\n\nSETUP\n1. Start the API:  PORT=3011 python app.py\n2. Open this collection's Variables tab and paste your API_KEY (from .env) into `apiKey`.\n3. Run the whole collection IN ORDER. Request 2 generates DI's yesterday with real scrumdb data and real Gemini (about 30 s); request 3 polls until it is done; the rest read it back.\n\nWHAT TO LOOK FOR\nAds: blended ROAS is payments received / spend (never 0x from empty platform revenue), and campaign ROAS is labelled Meta-reported. Requests 13-17 check viewer scoping: a rep without team view sees only their own row and only their tabs.\n\nGeneration writes only this service's own MongoDB collections (ai_briefings, ai_briefing_runs). scrumdb is read-only.\n\nRequests 25-28 cover token consumption and estimated spend: per briefing, per run, and summed over a date range.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -287,7 +287,8 @@
               "pm.test('blocks for the Read more modal', () => pm.expect(b.blocks).to.be.an('array'));",
               "pm.test('All label', () => pm.expect(b.summary.label).to.eql('Across all sections yesterday'));",
               "pm.test('at most 3 watch items', () => pm.expect(b.watch.length).to.be.at.most(3));",
-              "pm.test('score card carried on every tab', () => pm.expect(b).to.have.property('score_card'));"
+              "pm.test('score card carried on every tab', () => pm.expect(b).to.have.property('score_card'));",
+              "pm.test('tokens and cost on the briefing itself', () => { pm.expect(b.usage).to.be.an('object'); pm.expect(b).to.have.property('cost'); });"
             ]
           }
         }
@@ -1110,6 +1111,176 @@
             "type": "text/javascript",
             "exec": [
               "pm.test('404', () => pm.response.to.have.status(404));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "25. Usage - tokens and estimated spend",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/usage?from={{briefingDate}}&to={{briefingDate}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "usage"
+          ],
+          "query": [
+            {
+              "key": "from",
+              "value": "{{briefingDate}}"
+            },
+            {
+              "key": "to",
+              "value": "{{briefingDate}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('totals cover the generated day', () => { pm.expect(b.totals.briefings).to.be.above(0); pm.expect(b.totals.total_tokens).to.be.above(0); });",
+              "pm.test('tokens add up to total_tokens', () => { const t = b.totals; pm.expect(t.input_tokens + t.output_tokens + t.thinking_tokens + t.cached_tokens).to.eql(t.total_tokens); });",
+              "pm.test('cost is an estimate in USD and INR', () => { pm.expect(b.totals.cost_usd).to.be.a('number'); pm.expect(b.totals.cost_inr).to.be.a('number'); pm.expect(b.estimated).to.eql(true); });",
+              "pm.test('broken down by day, section and model', () => { pm.expect(b.per_day).to.be.an('array').that.is.not.empty; pm.expect(b.per_section).to.be.an('array').that.is.not.empty; pm.expect(b.per_model).to.be.an('array').that.is.not.empty; });",
+              "pm.test('per-day totals sum to the overall total', () => pm.expect(b.per_day.reduce((s, d) => s + d.total_tokens, 0)).to.eql(b.totals.total_tokens));",
+              "pm.test('averages and a 30-day projection', () => { pm.expect(b.averages.per_briefing_usd).to.be.a('number'); pm.expect(b.averages.projected_30_days_usd).to.be.a('number'); });",
+              "pm.test('pricing version and fixed FX rate named', () => { pm.expect(b.pricing.version).to.be.a('string'); pm.expect(b.pricing.usd_to_inr).to.be.a('number'); });",
+              "pm.test('caveats listed', () => pm.expect(b.notes).to.be.an('array'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "26. Usage - a day with no briefings is zero, not an error",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/usage?from=2020-01-01&to=2020-01-31",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "usage"
+          ],
+          "query": [
+            {
+              "key": "from",
+              "value": "2020-01-01"
+            },
+            {
+              "key": "to",
+              "value": "2020-01-31"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('empty totals', () => { pm.expect(b.totals.briefings).to.eql(0); pm.expect(b.totals.cost_usd).to.eql(0); pm.expect(b.per_day).to.be.empty; });",
+              "pm.test('no average to report', () => pm.expect(b.averages.per_briefing_usd).to.eql(null));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "27. Usage - backwards range is refused (422)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/usage?from=2026-09-30&to=2026-09-01",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "usage"
+          ],
+          "query": [
+            {
+              "key": "from",
+              "value": "2026-09-30"
+            },
+            {
+              "key": "to",
+              "value": "2026-09-01"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('422', () => pm.response.to.have.status(422));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "28. Runs - carry their own token and cost totals",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/ai-briefings/{{brandId}}/runs?limit=5",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai-briefings",
+            "{{brandId}}",
+            "runs"
+          ],
+          "query": [
+            {
+              "key": "limit",
+              "value": "5"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const run = pm.response.json().runs.find(r => r.run_id === pm.collectionVariables.get('runId'));",
+              "pm.test('run has usage and cost', () => { pm.expect(run.usage.total_tokens).to.be.above(0); pm.expect(run.cost.usd).to.be.a('number'); pm.expect(run.cost.llm_calls).to.be.above(0); });"
             ]
           }
         }

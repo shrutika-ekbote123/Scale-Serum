@@ -683,6 +683,12 @@ The report is self-contained — no joins needed to render it.
 8. **Evidence is clickable.** `segment_index` + `start` let you jump the audio
    player to the exact moment behind a score.
 9. **Lists are not padded.** Three highlights means three were supported.
+10. **Do not display `transcript.source` or `transcript.language`.** These are
+    internal diagnostics: `source` names the provider ("deepgram") and `language`
+    is the provider's own setting, where `multi` means its code-switching mode.
+    Neither means anything to a sales manager, and "multi" reads as "multichannel"
+    to anyone who sees it. On the transcript header show the **speaker count only**
+    — "2 speakers". The fields stay in the payload for debugging and billing.
 
 ### Suggested screen layout
 
@@ -731,6 +737,7 @@ The report is self-contained — no joins needed to render it.
 | Recording | `call.recording_reference` |
 | Highlights | `highlights[]` |
 | Transcript | `transcript.segments[]` + `transcript.speakers[]` |
+| Transcript header | `transcript.speaker_count` only — **not** `source`, **not** `language` |
 
 ---
 

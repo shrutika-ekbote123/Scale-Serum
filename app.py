@@ -2819,7 +2819,48 @@ async def ai_briefings_runs(
     return {"brand_id": brand_id, "runs": [
         {k: r.get(k) for k in ("run_id", "date", "trigger", "status", "sections", "error",
                                "queued_at", "started_at", "finished_at", "duration_ms",
-                               "usage")} for r in runs]}
+                               "usage", "cost")} for r in runs]}
+
+
+@app.get("/api/ai-briefings/{brand_id}/usage", tags=[AB_TAG],
+         summary="Tokens used and estimated Gemini spend over a date range",
+         dependencies=[Depends(require_api_key)])
+async def ai_briefings_usage(
+    brand_id: str,
+    from_: Optional[str] = Query(None, alias="from",
+                                 description="First brand-local day, inclusive (YYYY-MM-DD). "
+                                             "Defaults to 29 days before `to`."),
+    to: Optional[str] = Query(None, description="Last day, inclusive. Defaults to today."),
+):
+    """What the briefings cost.
+
+    Tokens and cost are recorded per briefing WHEN IT IS GENERATED, at the rates
+    in force that day, so changing pricing.json never rewrites an old bill. The
+    figures are an ESTIMATE: `notes` names every caveat that applies (an
+    unconfirmed model alias or rate, the team's fixed USD->INR rate, briefings
+    whose model has no configured price).
+
+    Costs are counted by the day each briefing is FOR, which is how the page
+    groups them. A tab with no data (WhatsApp not connected) costs nothing: no
+    Gemini call is made for it.
+    """
+    _require_briefings()
+    _require_uuid(brand_id, "brand_id")
+    end = _ab_date(to, "to") or date.today().isoformat()
+    start = _ab_date(from_, "from") or (
+        date.fromisoformat(end) - timedelta(days=29)).isoformat()
+    if start > end:
+        raise HTTPException(status_code=422, detail="`from` must be on or before `to`.")
+    if (date.fromisoformat(end) - date.fromisoformat(start)).days > 366:
+        raise HTTPException(status_code=422, detail="The range cannot exceed 366 days.")
+    docs = await ai_briefing_store.usage_between(brand_id, start, end)
+    pricing = None
+    if BILLING_AVAILABLE:
+        try:
+            pricing = _billing.load_pricing()
+        except Exception:  # noqa: BLE001 - a bad pricing file must not fail the report
+            pricing = None
+    return _ab.summarize_usage(docs, brand_id=brand_id, start=start, end=end, pricing=pricing)
 
 
 if __name__ == "__main__":

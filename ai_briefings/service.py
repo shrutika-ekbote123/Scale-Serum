@@ -40,7 +40,7 @@ class BriefingDeps:
     score_hot: Callable[[list, list], dict] = _hot.score
     load_analyses: Optional[Callable[[list], Awaitable[dict]]] = None
     load_brand_brain: Optional[Callable[[Optional[str]], Awaitable[Optional[dict]]]] = None
-    price_usage: Optional[Callable[[dict, int], Optional[float]]] = None
+    price_usage: Optional[Callable[[dict, int], Optional[dict]]] = None
     now: Callable[[], datetime] = field(default=lambda: datetime.now(timezone.utc))
 
 
@@ -61,7 +61,7 @@ def _callout_labels(section: str, result: dict) -> tuple[str, str]:
 def _document(result: dict, *, brand: dict, day: date, zone: tzs.BrandZone, cfg: dict,
               wording: dict, source: str, fallback_reason: Optional[str], usage: dict,
               model: str, freshness: list, run_id: str, now: datetime,
-              cost_usd: Optional[float]) -> dict:
+              cost: Optional[dict]) -> dict:
     section = result["section"]
     labels = cfg["sections"][section]
     top_label, watch_label = _callout_labels(section, result)
@@ -89,7 +89,10 @@ def _document(result: dict, *, brand: dict, day: date, zone: tzs.BrandZone, cfg:
         "fallback": source != "llm",
         "versions": {"config_version": cfg["config_version"],
                      "prompt_version": _writer.PROMPT_VERSION, "llm_model": model},
-        "usage": usage, "cost_usd": cost_usd,
+        # Tokens and what they cost at the rates in force NOW. Stored per
+        # briefing so a later price change cannot rewrite an old bill.
+        "usage": {**usage, "total_tokens": sum(int(v or 0) for v in usage.values())} if usage else {},
+        "cost": cost, "cost_usd": (cost or {}).get("usd"),
         "generated_at": now.isoformat(timespec="seconds"), "run_id": run_id,
     }
     for extra in ("score_card", "reps", "public_summary"):
@@ -183,27 +186,37 @@ async def generate_day(brand_id: str, deps: BriefingDeps, *, day: Optional[date]
     worded["all"] = await _word(results["all"], deps, cfg, day, brand_ctx)
 
     status_by_section, totals = {}, {}
+    cost_usd, cost_inr, calls = 0.0, 0.0, 0
     for name in ("all",) + SECTIONS:
         w = worded[name]
         usage = w["meta"].get("usage") or {}
+        attempts = w["meta"].get("attempts", 0)
         for k, v in usage.items():
             totals[k] = totals.get(k, 0) + v
-        cost = deps.price_usage(usage, w["meta"].get("attempts", 0)) if deps.price_usage else None
+        calls += attempts
+        cost = deps.price_usage(usage, attempts) if deps.price_usage else None
+        cost_usd += float((cost or {}).get("usd") or 0.0)
+        cost_inr += float((cost or {}).get("inr") or 0.0)
         doc = _document(results[name], brand=brand, day=day, zone=zone, cfg=cfg,
                         wording=w["wording"], source=w["source"],
                         fallback_reason=w["fallback_reason"], usage=usage,
                         model=deps.llm_model, freshness=raw["freshness"], run_id=run_id,
-                        now=now, cost_usd=cost)
+                        now=now, cost=cost)
         await deps.store.save(doc)
         status_by_section[name] = {"available": results[name]["available"],
                                    "wording": w["source"],
                                    "fallback_reason": w["fallback_reason"]}
 
     duration_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+    if totals:
+        totals["total_tokens"] = sum(int(v or 0) for v in totals.values())
+    cost_summary = {"usd": round(cost_usd, 6), "inr": round(cost_inr, 4), "llm_calls": calls,
+                    "estimated": True}
     await deps.store.finish_run(run_id, status="completed", sections=status_by_section,
-                                usage=totals, duration_ms=duration_ms,
+                                usage=totals, cost=cost_summary, duration_ms=duration_ms,
                                 timezone={"name": zone.name, "source": zone.source})
     logger.info("briefing run completed [brand_id=%s date=%s ms=%d]", brand_id, day_str,
                 duration_ms)
     return {"run_id": run_id, "brand_id": brand_id, "date": day_str, "status": "completed",
-            "sections": status_by_section, "duration_ms": duration_ms}
+            "sections": status_by_section, "usage": totals, "cost": cost_summary,
+            "duration_ms": duration_ms}
