@@ -1,0 +1,3487 @@
+{
+  "info": {
+    "_postman_id": "9c4d21ab-7f10-4c66-b0a2-scriptlabcoach02",
+    "name": "ScaleSerum - Script Lab Creative Coach",
+    "description": "The Creative Coach panel on Script Lab.\n\nEvery saved example here was CAPTURED FROM THE RUNNING SERVICE, and every request carries assertions, so this collection is a gate rather than a document:\n\n    newman run postman/ScaleSerum-ScriptLabCoach.postman_collection.json \\\n      --env-var baseUrl=http://127.0.0.1:3011 --env-var apiKey=$API_KEY\n\nSETUP\n1. PORT=3011 python app.py\n2. Set {{apiKey}} to API_KEY from .env.\n3. Run the folder in order: requests 21-24 rate the turn created by 4-14, via the {{lastRequestId}} variable.\n\nRequests 8-14 are the DEGRADED paths - no earlier version, ROAS that cannot exist, off-topic, no Brand Brain, a review that never completed, a script never published, Hinglish. A coach that only handles 4-7 is not finished. The contract lives in SCRIPT_LAB_COACH_API.md.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "X-API-Key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{apiKey}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:3011",
+      "type": "string"
+    },
+    {
+      "key": "apiKey",
+      "value": "",
+      "type": "string",
+      "description": "PASTE YOUR KEY HERE. Value of API_KEY in .env."
+    },
+    {
+      "key": "brandId",
+      "value": "bee79bff-d5f6-4220-a7d4-7a04bf173e59",
+      "type": "string",
+      "description": "DI."
+    },
+    {
+      "key": "otherBrandId",
+      "value": "ea8c5046-ae40-41cf-957f-de7b35cbfb17",
+      "type": "string",
+      "description": "Kaizen CRM - proves the cross-brand gate."
+    },
+    {
+      "key": "lastRequestId",
+      "value": "",
+      "type": "string",
+      "description": "Set by each chat request; used by the feedback requests."
+    },
+    {
+      "key": "userId",
+      "value": "postman-user",
+      "type": "string"
+    },
+    {
+      "key": "userRole",
+      "value": "superAdmin",
+      "type": "string"
+    },
+    {
+      "key": "userPermissions",
+      "value": "script_lab",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Health (no auth required)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"ok\", () => pm.expect(pm.response.json().ok).to.be.true);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        },
+        "description": "Liveness. Confirms the service is up before anything else.",
+        "auth": {
+          "type": "noauth"
+        }
+      },
+      "response": [
+        {
+          "name": "200 - captured from the live service",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Liveness. Confirms the service is up before anything else.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "status": "200",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"ok\": true,\n  \"model\": \"gemini-flash-latest\",\n  \"sales_call_analyzer\": {\n    \"available\": true,\n    \"transcription\": \"configured\",\n    \"storage\": \"configured\",\n    \"language_id\": {\n      \"mode\": \"off\",\n      \"model\": null,\n      \"ffmpeg\": true\n    }\n  },\n  \"vision_lab\": {\n    \"available\": true,\n    \"enabled\": true,\n    \"storage\": \"configured\",\n    \"worker\": {\n      \"seen_seconds_ago\": null,\n      \"healthy\": null,\n      \"in_flight\": 0\n    },\n    \"queue\": {\n      \"queued\": 0,\n      \"oldest_waiting_seconds\": null\n    },\n    \"model\": \"configured\",\n    \"framework_version\": \"vision_v1\",\n    \"transcription\": \"configured\",\n    \"interpretation\": \"configured\"\n  },\n  \"ai_suggested_next_action\": {\n    \"available\": true,\n    \"storage\": \"configured\"\n  },\n  \"ai_briefings\": {\n    \"available\": true,\n    \"storage\": \"configured\"\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "1. Auth - wrong key is refused",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 401\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          },
+          {
+            "key": "X-API-Key",
+            "value": "deliberately-wrong"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "chat"
+          ]
+        },
+        "description": "Every /api/* route is gated by X-API-Key. The browser must never hold it.",
+        "auth": {
+          "type": "noauth"
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"Why is the hook weak?\",\n  \"intent\": null,\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "401 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "deliberately-wrong"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "chat"
+              ]
+            },
+            "description": "Every /api/* route is gated by X-API-Key. The browser must never hold it.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"Why is the hook weak?\",\n  \"intent\": null,\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "401",
+          "code": 401,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"detail\": \"Invalid or missing API key. Send it in the 'X-API-Key' header.\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "2. Starters - opening turn and chips (no AI call)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+              "const s = pm.response.json();",
+              "pm.test(\"intro and chips\", () => {",
+              "  pm.expect(s.intro.text).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(s.starters).to.be.an(\"array\").that.is.not.empty;",
+              "  pm.expect(s.capabilities).to.have.property(\"performance\");",
+              "});",
+              "pm.test(\"chips carry an intent to send back\", () => s.starters.forEach(c => pm.expect(c.intent).to.be.a(\"string\")));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/starters?test_id=05cc1f26-3527-48b4-99bc-c748963d44ab&brand_id={{brandId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "starters"
+          ],
+          "query": [
+            {
+              "key": "test_id",
+              "value": "05cc1f26-3527-48b4-99bc-c748963d44ab"
+            },
+            {
+              "key": "brand_id",
+              "value": "bee79bff-d5f6-4220-a7d4-7a04bf173e59"
+            }
+          ]
+        },
+        "description": "Call when the panel opens. Computed from the stored review: instant and free.\n`capabilities` says which chips are worth showing for THIS test."
+      },
+      "response": [
+        {
+          "name": "200 - captured from the live service",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/starters?test_id=05cc1f26-3527-48b4-99bc-c748963d44ab&brand_id={{brandId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "starters"
+              ],
+              "query": [
+                {
+                  "key": "test_id",
+                  "value": "05cc1f26-3527-48b4-99bc-c748963d44ab"
+                },
+                {
+                  "key": "brand_id",
+                  "value": "bee79bff-d5f6-4220-a7d4-7a04bf173e59"
+                }
+              ]
+            },
+            "description": "Call when the panel opens. Computed from the stored review: instant and free.\n`capabilities` says which chips are worth showing for THIS test."
+          },
+          "status": "200",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"intro\": {\n    \"role\": \"coach\",\n    \"intent\": \"intro\",\n    \"text\": \"Tested \\\"1411_PGLI_Dubai AI startup_ Actorsname_Cold_Square\\\" - score 5/100, rewrite required. The weakest part is Problem / Tension at 0/10. It also drifts from your brand voice. Ask me why, or how to push the score higher.\",\n    \"fallback\": false\n  },\n  \"starters\": [\n    {\n      \"label\": \"Why is the Problem / Tension only 0/10?\",\n      \"intent\": \"explain\"\n    },\n    {\n      \"label\": \"What should I change first?\",\n      \"intent\": \"prioritize\"\n    },\n    {\n      \"label\": \"Rewrite the hook for me\",\n      \"intent\": \"rewrite\"\n    }\n  ],\n  \"brand_brain\": {\n    \"tier\": \"A\",\n    \"used\": true,\n    \"missing\": []\n  },\n  \"capabilities\": {\n    \"performance\": true,\n    \"compare\": false,\n    \"brand_fit\": true\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "3. Starters - a review that never completed",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"says the review did not complete\", () => pm.expect(pm.response.json().intro.text).to.match(/did not complete/i));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/starters?test_id=b10eb698-d70a-4a56-920f-3d68192f7319",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "starters"
+          ],
+          "query": [
+            {
+              "key": "test_id",
+              "value": "b10eb698-d70a-4a56-920f-3d68192f7319"
+            }
+          ]
+        },
+        "description": "DEGRADED. 35% of stored tests have ai_fallback=true. The intro says the review did not complete instead of presenting a placeholder score as real."
+      },
+      "response": [
+        {
+          "name": "200 - captured from the live service",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/starters?test_id=b10eb698-d70a-4a56-920f-3d68192f7319",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "starters"
+              ],
+              "query": [
+                {
+                  "key": "test_id",
+                  "value": "b10eb698-d70a-4a56-920f-3d68192f7319"
+                }
+              ]
+            },
+            "description": "DEGRADED. 35% of stored tests have ai_fallback=true. The intro says the review did not complete instead of presenting a placeholder score as real."
+          },
+          "status": "200",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"intro\": {\n    \"role\": \"coach\",\n    \"intent\": \"intro\",\n    \"text\": \"The AI review did not complete for \\\"941ICDP India_Podcast-Remuneration_Heval+Ashutosh_Cold_Square – Copy\\\", so the score you see is a placeholder rather than a real result. Re-run the test and I will break down what it found.\",\n    \"fallback\": false\n  },\n  \"starters\": [\n    {\n      \"label\": \"Why did the review fail?\",\n      \"intent\": \"explain\"\n    },\n    {\n      \"label\": \"What should I check in the script?\",\n      \"intent\": \"diagnose\"\n    }\n  ],\n  \"brand_brain\": {\n    \"tier\": \"C\",\n    \"used\": false,\n    \"missing\": [\n      \"businessType\",\n      \"idealCustomer\",\n      \"brandVoice\",\n      \"language\",\n      \"trafficChannels\",\n      \"salesCycle\",\n      \"competitors\",\n      \"marketingGoal\",\n      \"journey\"\n    ]\n  },\n  \"capabilities\": {\n    \"performance\": false,\n    \"compare\": false,\n    \"brand_fit\": false\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "4. Chat - explain (chip click, intent supplied)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+              "const t = pm.response.json();",
+              "pm.test(\"carries the three keys coach_thread already stores\", () => {",
+              "  pm.expect(t.role).to.eql(\"coach\");",
+              "  pm.expect(t.text).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(t.intent).to.be.a(\"string\");",
+              "});",
+              "pm.test(\"carries the grounding block\", () => {",
+              "  pm.expect(t).to.have.property(\"facts_used\");",
+              "  pm.expect(t).to.have.property(\"evidence\");",
+              "  pm.expect(t).to.have.property(\"grounded\");",
+              "  pm.expect(t).to.have.property(\"fallback\");",
+              "  pm.expect(t).to.have.property(\"request_id\");",
+              "  pm.expect(t.brand_brain).to.have.property(\"tier\");",
+              "});",
+              "pm.test(\"no placeholder text reaches the user\", () => {",
+              "  const whole = (t.text || \"\") + \" \" + (t.suggested_rewrite || \"\");",
+              "  pm.expect(whole.toLowerCase()).to.not.match(/(^|[^a-z])(undefined|null|nan)([^a-z]|$)/);",
+              "});",
+              "pm.collectionVariables.set(\"lastRequestId\", t.request_id);",
+              "pm.test(\"answer is grounded\", () => pm.expect(pm.response.json().grounded).to.be.true);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "chat"
+          ]
+        },
+        "description": "A chip passes its intent, which skips classification: faster and cheaper.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"Why is the Problem / Tension only 0/10?\",\n  \"intent\": \"explain\",\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "200 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "chat"
+              ]
+            },
+            "description": "A chip passes its intent, which skips classification: faster and cheaper.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"Why is the Problem / Tension only 0/10?\",\n  \"intent\": \"explain\",\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "200",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"role\": \"coach\",\n  \"text\": \"Your script received an overall score of 5/100, which lands in the Rewrite required band. That overall result was driven down by near-total failure across every creative section: Problem / Tension scored 0/10, Solution / Offer scored 0/10, Social Proof / Credibility scored 0/10, Call to Action scored 0/10, Pacing & Tightness scored 0/10, and Hook scored 1/10.\\n\\nThe Problem / Tension section received 0/10 because the submission contains only keyboard text rather than actual copy. It does not name manual document drafting friction, deadline fatigue, or billable hour losses that legal professionals deal with daily, meaning there is no tension or problem established for the audience to recognize.\\n\\nThis low score does not mean your software or offer lacks value. It simply reflects that random keystrokes provide zero direct-response narrative or problem awareness for cold traffic to engage with.\",\n  \"intent\": \"explain\",\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"facts_used\": [\n    {\n      \"key\": \"overall_score\",\n      \"value\": 5,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"attention\",\n      \"value\": 5,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"resonance\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"conversion\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"creative\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"marketing_angle_execution\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"hook_score\",\n      \"value\": 1,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"problem__tension_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"solution__offer_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"social_proof__credibility_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"call_to_action_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"pacing__tightness_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"brand_voice_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"funnel_stage_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"marketing_angle_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"emotional_angle_status\",\n      \"value\": \"ANGLE OFF\"\n    },\n    {\n      \"key\": \"verdict_band\",\n      \"value\": \"Rewrite required\"\n    },\n    {\n      \"key\": \"marketing_angle\",\n      \"value\": \"original\"\n    },\n    {\n      \"key\": \"funnel_stage\",\n      \"value\": \"cold\"\n    },\n    {\n      \"key\": \"improvement_count\",\n      \"value\": 3\n    }\n  ],\n  \"evidence\": [\n    {\n      \"type\": \"brand_brain\",\n      \"ad_id\": null,\n      \"metric\": \"tier\",\n      \"value\": \"A\",\n      \"window\": \"current\",\n      \"source\": \"brand_brains\"\n    }\n  ],\n  \"suggested_rewrite\": \"How many billable hours did your team lose this week to manual contract drafting? When heavy caseloads collide with strict compliance demands, routine administrative work stalls your entire practice.\",\n  \"follow_ups\": [\n    \"Would you like to review a full draft that addresses the drafting workload problem?\",\n    \"Should we build a complete cold-audience script using the Original angle?\",\n    \"Do you want to see how to structure the hook to target legal professionals?\"\n  ],\n  \"confidence\": \"high\",\n  \"refused\": false,\n  \"brand_brain\": {\n    \"tier\": \"A\",\n    \"used\": true,\n    \"missing\": []\n  },\n  \"capabilities\": {\n    \"performance\": false,\n    \"compare\": false,\n    \"brand_fit\": true\n  },\n  \"grounded\": true,\n  \"fallback\": false,\n  \"fallback_reason\": null,\n  \"routed_by\": \"supplied\",\n  \"usage\": {\n    \"input_tokens\": 2816,\n    \"output_tokens\": 335\n  },\n  \"cost\": {\n    \"usd\": 0.003368,\n    \"inr\": 0.2964,\n    \"attempts\": 1,\n    \"model_requested\": \"gemini-flash-latest\",\n    \"model_priced\": \"gemini-3.8-flash\",\n    \"alias_confirmed\": false,\n    \"rate_confirmed\": true,\n    \"rate_effective_from\": \"2026-01-01\",\n    \"rate_input_per_1m_usd\": 0.75,\n    \"rate_output_per_1m_usd\": 3.75,\n    \"rate_cached_input_per_1m_usd\": 0.075,\n    \"usd_to_inr\": 88,\n    \"pricing_version\": \"2026-09-15.1\",\n    \"estimated\": true,\n    \"reason\": null,\n    \"notes\": [\n      \"gemini_alias_unconfirmed\",\n      \"fx_fixed_rate\"\n    ]\n  },\n  \"model\": \"gemini-flash-latest\",\n  \"prompt_version\": \"coach_p1\",\n  \"latency_ms\": 3625,\n  \"request_id\": \"6952ca86-00c5-4a25-b7d5-079e98876c44\",\n  \"created_at\": \"2026-09-25T09:23:12Z\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "5. Chat - prioritize",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+              "const t = pm.response.json();",
+              "pm.test(\"carries the three keys coach_thread already stores\", () => {",
+              "  pm.expect(t.role).to.eql(\"coach\");",
+              "  pm.expect(t.text).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(t.intent).to.be.a(\"string\");",
+              "});",
+              "pm.test(\"carries the grounding block\", () => {",
+              "  pm.expect(t).to.have.property(\"facts_used\");",
+              "  pm.expect(t).to.have.property(\"evidence\");",
+              "  pm.expect(t).to.have.property(\"grounded\");",
+              "  pm.expect(t).to.have.property(\"fallback\");",
+              "  pm.expect(t).to.have.property(\"request_id\");",
+              "  pm.expect(t.brand_brain).to.have.property(\"tier\");",
+              "});",
+              "pm.test(\"no placeholder text reaches the user\", () => {",
+              "  const whole = (t.text || \"\") + \" \" + (t.suggested_rewrite || \"\");",
+              "  pm.expect(whole.toLowerCase()).to.not.match(/(^|[^a-z])(undefined|null|nan)([^a-z]|$)/);",
+              "});",
+              "pm.collectionVariables.set(\"lastRequestId\", t.request_id);",
+              "pm.test(\"answer is grounded\", () => pm.expect(pm.response.json().grounded).to.be.true);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "chat"
+          ]
+        },
+        "description": "One thing to change first, and why it beats the alternatives.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"What should I change first?\",\n  \"intent\": \"prioritize\",\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "200 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "chat"
+              ]
+            },
+            "description": "One thing to change first, and why it beats the alternatives.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"What should I change first?\",\n  \"intent\": \"prioritize\",\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "200",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"role\": \"coach\",\n  \"text\": \"Replace the opening keystrokes with an intelligible, problem-focused hook. This must happen first because the current opening scored 1/10 and provides zero message, meaning any target lawyer on Meta will scroll past before seeing an offer or call to action.\\n\\nSecond, introduce DI clearly as the automated drafting software that removes manual drafting fatigue without compromising quality. Third, add a clear call to action directing viewers to watch a workflow demo to capture the lead.\",\n  \"intent\": \"prioritize\",\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"facts_used\": [\n    {\n      \"key\": \"overall_score\",\n      \"value\": 5,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"attention\",\n      \"value\": 5,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"resonance\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"conversion\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"creative\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"marketing_angle_execution\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"hook_score\",\n      \"value\": 1,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"problem__tension_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"solution__offer_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"social_proof__credibility_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"call_to_action_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"pacing__tightness_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"brand_voice_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"funnel_stage_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"marketing_angle_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"emotional_angle_status\",\n      \"value\": \"ANGLE OFF\"\n    },\n    {\n      \"key\": \"verdict_band\",\n      \"value\": \"Rewrite required\"\n    },\n    {\n      \"key\": \"marketing_angle\",\n      \"value\": \"original\"\n    },\n    {\n      \"key\": \"funnel_stage\",\n      \"value\": \"cold\"\n    },\n    {\n      \"key\": \"improvement_count\",\n      \"value\": 3\n    }\n  ],\n  \"evidence\": [\n    {\n      \"type\": \"brand_brain\",\n      \"ad_id\": null,\n      \"metric\": \"tier\",\n      \"value\": \"A\",\n      \"window\": \"current\",\n      \"source\": \"brand_brains\"\n    }\n  ],\n  \"suggested_rewrite\": \"How many hours did your team spend drafting repetitive legal agreements this week?\",\n  \"follow_ups\": [\n    \"Would you like a full cold script draft for DI?\",\n    \"Should we review the problem and tension beat next?\"\n  ],\n  \"confidence\": \"high\",\n  \"refused\": false,\n  \"brand_brain\": {\n    \"tier\": \"A\",\n    \"used\": true,\n    \"missing\": []\n  },\n  \"capabilities\": {\n    \"performance\": false,\n    \"compare\": false,\n    \"brand_fit\": true\n  },\n  \"grounded\": true,\n  \"fallback\": false,\n  \"fallback_reason\": null,\n  \"routed_by\": \"supplied\",\n  \"usage\": {\n    \"input_tokens\": 2797,\n    \"output_tokens\": 179\n  },\n  \"cost\": {\n    \"usd\": 0.002769,\n    \"inr\": 0.2437,\n    \"attempts\": 1,\n    \"model_requested\": \"gemini-flash-latest\",\n    \"model_priced\": \"gemini-3.8-flash\",\n    \"alias_confirmed\": false,\n    \"rate_confirmed\": true,\n    \"rate_effective_from\": \"2026-01-01\",\n    \"rate_input_per_1m_usd\": 0.75,\n    \"rate_output_per_1m_usd\": 3.75,\n    \"rate_cached_input_per_1m_usd\": 0.075,\n    \"usd_to_inr\": 88,\n    \"pricing_version\": \"2026-09-15.1\",\n    \"estimated\": true,\n    \"reason\": null,\n    \"notes\": [\n      \"gemini_alias_unconfirmed\",\n      \"fx_fixed_rate\"\n    ]\n  },\n  \"model\": \"gemini-flash-latest\",\n  \"prompt_version\": \"coach_p1\",\n  \"latency_ms\": 2342,\n  \"request_id\": \"835ea954-1abe-412a-9a9b-f13b976f80fa\",\n  \"created_at\": \"2026-09-25T09:23:14Z\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "6. Chat - rewrite",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+              "const t = pm.response.json();",
+              "pm.test(\"carries the three keys coach_thread already stores\", () => {",
+              "  pm.expect(t.role).to.eql(\"coach\");",
+              "  pm.expect(t.text).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(t.intent).to.be.a(\"string\");",
+              "});",
+              "pm.test(\"carries the grounding block\", () => {",
+              "  pm.expect(t).to.have.property(\"facts_used\");",
+              "  pm.expect(t).to.have.property(\"evidence\");",
+              "  pm.expect(t).to.have.property(\"grounded\");",
+              "  pm.expect(t).to.have.property(\"fallback\");",
+              "  pm.expect(t).to.have.property(\"request_id\");",
+              "  pm.expect(t.brand_brain).to.have.property(\"tier\");",
+              "});",
+              "pm.test(\"no placeholder text reaches the user\", () => {",
+              "  const whole = (t.text || \"\") + \" \" + (t.suggested_rewrite || \"\");",
+              "  pm.expect(whole.toLowerCase()).to.not.match(/(^|[^a-z])(undefined|null|nan)([^a-z]|$)/);",
+              "});",
+              "pm.collectionVariables.set(\"lastRequestId\", t.request_id);",
+              "pm.test(\"returns copy to paste\", () => pm.expect(pm.response.json().suggested_rewrite).to.be.a(\"string\").and.not.empty);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "chat"
+          ]
+        },
+        "description": "suggested_rewrite is a separate field so the UI can render a Copy button.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"Rewrite the hook for me\",\n  \"intent\": \"rewrite\",\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "200 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "chat"
+              ]
+            },
+            "description": "suggested_rewrite is a separate field so the UI can render a Copy button.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"Rewrite the hook for me\",\n  \"intent\": \"rewrite\",\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "200",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"role\": \"coach\",\n  \"text\": \"The original submission scored 1/10 for the hook because it was unintelligible keystrokes with zero problem awareness. Cold legal traffic requires an immediate confrontation with drafting fatigue and lost time.\\n\\nOpen on the exhausting administrative burden project legal teams face each week to qualify the audience immediately and establish friction.\",\n  \"intent\": \"rewrite\",\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"facts_used\": [\n    {\n      \"key\": \"overall_score\",\n      \"value\": 5,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"attention\",\n      \"value\": 5,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"resonance\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"conversion\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"creative\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"marketing_angle_execution\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"hook_score\",\n      \"value\": 1,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"problem__tension_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"solution__offer_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"social_proof__credibility_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"call_to_action_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"pacing__tightness_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"brand_voice_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"funnel_stage_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"marketing_angle_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"emotional_angle_status\",\n      \"value\": \"ANGLE OFF\"\n    },\n    {\n      \"key\": \"verdict_band\",\n      \"value\": \"Rewrite required\"\n    },\n    {\n      \"key\": \"marketing_angle\",\n      \"value\": \"original\"\n    },\n    {\n      \"key\": \"funnel_stage\",\n      \"value\": \"cold\"\n    },\n    {\n      \"key\": \"improvement_count\",\n      \"value\": 3\n    },\n    {\n      \"key\": \"best_brand_creative_score\",\n      \"value\": 86,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"worst_brand_creative_score\",\n      \"value\": 17,\n      \"unit\": \"/100\"\n    }\n  ],\n  \"evidence\": [\n    {\n      \"type\": \"brand_creative\",\n      \"ad_id\": \"120251070761160057\",\n      \"metric\": \"creative_score\",\n      \"value\": 86.0,\n      \"window\": \"latest\",\n      \"source\": \"mi_ad_creative_analyses\"\n    },\n    {\n      \"type\": \"brand_creative\",\n      \"ad_id\": \"120253441492710670\",\n      \"metric\": \"creative_score\",\n      \"value\": 86.0,\n      \"window\": \"latest\",\n      \"source\": \"mi_ad_creative_analyses\"\n    },\n    {\n      \"type\": \"brand_creative\",\n      \"ad_id\": \"120253762247400670\",\n      \"metric\": \"creative_score\",\n      \"value\": 86.0,\n      \"window\": \"latest\",\n      \"source\": \"mi_ad_creative_analyses\"\n    },\n    {\n      \"type\": \"competitor_ad\",\n      \"ad_id\": \"992070833180585\",\n      \"metric\": \"est_run_days\",\n      \"value\": 134,\n      \"window\": \"all\",\n      \"source\": \"mi_competitor_ads\"\n    },\n    {\n      \"type\": \"competitor_ad\",\n      \"ad_id\": \"1496666138675829\",\n      \"metric\": \"est_run_days\",\n      \"value\": 119,\n      \"window\": \"all\",\n      \"source\": \"mi_competitor_ads\"\n    },\n    {\n      \"type\": \"competitor_ad\",\n      \"ad_id\": \"1061283649587199\",\n      \"metric\": \"est_run_days\",\n      \"value\": 70,\n      \"window\": \"all\",\n      \"source\": \"mi_competitor_ads\"\n    },\n    {\n      \"type\": \"competitor_ad\",\n      \"ad_id\": \"1636775907391777\",\n      \"metric\": \"est_run_days\",\n      \"value\": 70,\n      \"window\": \"all\",\n      \"source\": \"mi_competitor_ads\"\n    },\n    {\n      \"type\": \"competitor_ad\",\n      \"ad_id\": \"2284025518999314\",\n      \"metric\": \"est_run_days\",\n      \"value\": 55,\n      \"window\": \"all\",\n      \"source\": \"mi_competitor_ads\"\n    },\n    {\n      \"type\": \"brand_brain\",\n      \"ad_id\": null,\n      \"metric\": \"tier\",\n      \"value\": \"A\",\n      \"window\": \"current\",\n      \"source\": \"brand_brains\"\n    }\n  ],\n  \"suggested_rewrite\": \"How many billable hours did your legal team lose to repetitive contract drafting this week?\",\n  \"follow_ups\": [\n    \"Would you like a full cold-stage script rewrite based on this hook?\",\n    \"Should we develop the problem and solution beats next?\"\n  ],\n  \"confidence\": \"high\",\n  \"refused\": false,\n  \"brand_brain\": {\n    \"tier\": \"A\",\n    \"used\": true,\n    \"missing\": []\n  },\n  \"capabilities\": {\n    \"performance\": false,\n    \"compare\": false,\n    \"brand_fit\": true\n  },\n  \"grounded\": true,\n  \"fallback\": false,\n  \"fallback_reason\": null,\n  \"routed_by\": \"supplied\",\n  \"usage\": {\n    \"input_tokens\": 3300,\n    \"output_tokens\": 156\n  },\n  \"cost\": {\n    \"usd\": 0.00306,\n    \"inr\": 0.2693,\n    \"attempts\": 1,\n    \"model_requested\": \"gemini-flash-latest\",\n    \"model_priced\": \"gemini-3.8-flash\",\n    \"alias_confirmed\": false,\n    \"rate_confirmed\": true,\n    \"rate_effective_from\": \"2026-01-01\",\n    \"rate_input_per_1m_usd\": 0.75,\n    \"rate_output_per_1m_usd\": 3.75,\n    \"rate_cached_input_per_1m_usd\": 0.075,\n    \"usd_to_inr\": 88,\n    \"pricing_version\": \"2026-09-15.1\",\n    \"estimated\": true,\n    \"reason\": null,\n    \"notes\": [\n      \"gemini_alias_unconfirmed\",\n      \"fx_fixed_rate\"\n    ]\n  },\n  \"model\": \"gemini-flash-latest\",\n  \"prompt_version\": \"coach_p1\",\n  \"latency_ms\": 2390,\n  \"request_id\": \"960ffa53-5b8b-4122-af81-6dbcdbd46099\",\n  \"created_at\": \"2026-09-25T09:23:17Z\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "7. Chat - performance (real ad figures)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+              "const t = pm.response.json();",
+              "pm.test(\"carries the three keys coach_thread already stores\", () => {",
+              "  pm.expect(t.role).to.eql(\"coach\");",
+              "  pm.expect(t.text).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(t.intent).to.be.a(\"string\");",
+              "});",
+              "pm.test(\"carries the grounding block\", () => {",
+              "  pm.expect(t).to.have.property(\"facts_used\");",
+              "  pm.expect(t).to.have.property(\"evidence\");",
+              "  pm.expect(t).to.have.property(\"grounded\");",
+              "  pm.expect(t).to.have.property(\"fallback\");",
+              "  pm.expect(t).to.have.property(\"request_id\");",
+              "  pm.expect(t.brand_brain).to.have.property(\"tier\");",
+              "});",
+              "pm.test(\"no placeholder text reaches the user\", () => {",
+              "  const whole = (t.text || \"\") + \" \" + (t.suggested_rewrite || \"\");",
+              "  pm.expect(whole.toLowerCase()).to.not.match(/(^|[^a-z])(undefined|null|nan)([^a-z]|$)/);",
+              "});",
+              "pm.collectionVariables.set(\"lastRequestId\", t.request_id);",
+              "pm.test(\"answer is grounded\", () => pm.expect(pm.response.json().grounded).to.be.true);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "chat"
+          ]
+        },
+        "description": "Reads ad-level meta_insights. Every figure carries an evidence row, and a paused ad is reported as paused before any number is interpreted.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"How is this ad actually doing?\",\n  \"intent\": \"performance\",\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "200 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "chat"
+              ]
+            },
+            "description": "Reads ad-level meta_insights. Every figure carries an evidence row, and a paused ad is reported as paused before any number is interpreted.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"How is this ad actually doing?\",\n  \"intent\": \"performance\",\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "200",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"role\": \"coach\",\n  \"text\": \"This ad is not active. Its ad set status is ADSET_PAUSED, it last delivered on 2026-06-27, and it recorded only 4 days of delivery data in total. Any performance numbers reflect that brief run rather than an ongoing campaign.\\n\\nDuring those 4 days, the ad accumulated 8235 impressions and 1012 clicks at a spend of 3100.04. It generated 94 leads, resulting in a cost per lead of 32.98, a CPC of 3.06, a CTR of 12.29%, and a CPM of 376.45.\\n\\nWhile the click-through rate and lead count show initial platform engagement, 4 days of data is too limited to prove sustained viability or long-term efficiency. Because delivery stopped, these metrics do not indicate whether the ad could maintain volume or lead quality over a standard flight.\",\n  \"intent\": \"performance\",\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"facts_used\": [\n    {\n      \"key\": \"overall_score\",\n      \"value\": 5,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"attention\",\n      \"value\": 5,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"resonance\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"conversion\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"creative\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"marketing_angle_execution\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"hook_score\",\n      \"value\": 1,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"problem__tension_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"solution__offer_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"social_proof__credibility_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"call_to_action_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"pacing__tightness_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"brand_voice_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"funnel_stage_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"marketing_angle_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"emotional_angle_status\",\n      \"value\": \"ANGLE OFF\"\n    },\n    {\n      \"key\": \"verdict_band\",\n      \"value\": \"Rewrite required\"\n    },\n    {\n      \"key\": \"marketing_angle\",\n      \"value\": \"original\"\n    },\n    {\n      \"key\": \"funnel_stage\",\n      \"value\": \"cold\"\n    },\n    {\n      \"key\": \"improvement_count\",\n      \"value\": 3\n    },\n    {\n      \"key\": \"days_with_data\",\n      \"value\": 4\n    },\n    {\n      \"key\": \"last_delivery_date\",\n      \"value\": \"2026-06-27\"\n    },\n    {\n      \"key\": \"currently_delivering\",\n      \"value\": false\n    },\n    {\n      \"key\": \"impressions_lifetime\",\n      \"value\": 8235\n    },\n    {\n      \"key\": \"clicks_lifetime\",\n      \"value\": 1012\n    },\n    {\n      \"key\": \"leads_lifetime\",\n      \"value\": 94\n    },\n    {\n      \"key\": \"spend_lifetime\",\n      \"value\": 3100.04\n    },\n    {\n      \"key\": \"ctr_pct_lifetime\",\n      \"value\": 12.29,\n      \"unit\": \"%\"\n    },\n    {\n      \"key\": \"cpm_lifetime\",\n      \"value\": 376.45\n    },\n    {\n      \"key\": \"cpc_lifetime\",\n      \"value\": 3.06\n    },\n    {\n      \"key\": \"cpl_lifetime\",\n      \"value\": 32.98\n    },\n    {\n      \"key\": \"ad_status\",\n      \"value\": \"ADSET_PAUSED\"\n    }\n  ],\n  \"evidence\": [\n    {\n      \"type\": \"ad_performance\",\n      \"ad_id\": \"120251070761150057\",\n      \"metric\": \"ctr_pct\",\n      \"value\": 12.29,\n      \"window\": \"lifetime\",\n      \"source\": \"meta_insights\"\n    },\n    {\n      \"type\": \"ad_performance\",\n      \"ad_id\": \"120251070761150057\",\n      \"metric\": \"cpm\",\n      \"value\": 376.45,\n      \"window\": \"lifetime\",\n      \"source\": \"meta_insights\"\n    },\n    {\n      \"type\": \"ad_performance\",\n      \"ad_id\": \"120251070761150057\",\n      \"metric\": \"cpc\",\n      \"value\": 3.06,\n      \"window\": \"lifetime\",\n      \"source\": \"meta_insights\"\n    },\n    {\n      \"type\": \"ad_performance\",\n      \"ad_id\": \"120251070761150057\",\n      \"metric\": \"impressions\",\n      \"value\": 8235,\n      \"window\": \"lifetime\",\n      \"source\": \"meta_insights\"\n    },\n    {\n      \"type\": \"ad_performance\",\n      \"ad_id\": \"120251070761150057\",\n      \"metric\": \"clicks\",\n      \"value\": 1012,\n      \"window\": \"lifetime\",\n      \"source\": \"meta_insights\"\n    },\n    {\n      \"type\": \"ad_performance\",\n      \"ad_id\": \"120251070761150057\",\n      \"metric\": \"leads\",\n      \"value\": 94,\n      \"window\": \"lifetime\",\n      \"source\": \"meta_insights\"\n    },\n    {\n      \"type\": \"brand_brain\",\n      \"ad_id\": null,\n      \"metric\": \"tier\",\n      \"value\": \"A\",\n      \"window\": \"current\",\n      \"source\": \"brand_brains\"\n    }\n  ],\n  \"suggested_rewrite\": \"How many hours did your team spend drafting repetitive legal agreements this week? Meet DI: the automated drafting software built specifically for project legal teams who need to turn out flawless, compliant contracts in minutes, not hours. Watch a 3-minute interactive workflow demo and see how your firm can automate its next 50 contracts.\",\n  \"follow_ups\": [\n    \"Should we unpause this ad or launch a rewritten script?\",\n    \"Why did the stored review score this creative at 5/100?\",\n    \"How does the CPM of 376.45 affect our cold audience targeting?\"\n  ],\n  \"confidence\": \"high\",\n  \"refused\": false,\n  \"brand_brain\": {\n    \"tier\": \"A\",\n    \"used\": true,\n    \"missing\": []\n  },\n  \"capabilities\": {\n    \"performance\": true,\n    \"compare\": false,\n    \"brand_fit\": true\n  },\n  \"grounded\": true,\n  \"fallback\": false,\n  \"fallback_reason\": null,\n  \"routed_by\": \"supplied\",\n  \"usage\": {\n    \"input_tokens\": 3033,\n    \"output_tokens\": 371\n  },\n  \"cost\": {\n    \"usd\": 0.003666,\n    \"inr\": 0.3226,\n    \"attempts\": 1,\n    \"model_requested\": \"gemini-flash-latest\",\n    \"model_priced\": \"gemini-3.8-flash\",\n    \"alias_confirmed\": false,\n    \"rate_confirmed\": true,\n    \"rate_effective_from\": \"2026-01-01\",\n    \"rate_input_per_1m_usd\": 0.75,\n    \"rate_output_per_1m_usd\": 3.75,\n    \"rate_cached_input_per_1m_usd\": 0.075,\n    \"usd_to_inr\": 88,\n    \"pricing_version\": \"2026-09-15.1\",\n    \"estimated\": true,\n    \"reason\": null,\n    \"notes\": [\n      \"gemini_alias_unconfirmed\",\n      \"fx_fixed_rate\"\n    ]\n  },\n  \"model\": \"gemini-flash-latest\",\n  \"prompt_version\": \"coach_p1\",\n  \"latency_ms\": 3203,\n  \"request_id\": \"95e2d60a-6f80-454a-a9a3-1c8f6cbb84ff\",\n  \"created_at\": \"2026-09-25T09:23:21Z\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "8. Chat - compare with no earlier version",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+              "const t = pm.response.json();",
+              "pm.test(\"carries the three keys coach_thread already stores\", () => {",
+              "  pm.expect(t.role).to.eql(\"coach\");",
+              "  pm.expect(t.text).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(t.intent).to.be.a(\"string\");",
+              "});",
+              "pm.test(\"carries the grounding block\", () => {",
+              "  pm.expect(t).to.have.property(\"facts_used\");",
+              "  pm.expect(t).to.have.property(\"evidence\");",
+              "  pm.expect(t).to.have.property(\"grounded\");",
+              "  pm.expect(t).to.have.property(\"fallback\");",
+              "  pm.expect(t).to.have.property(\"request_id\");",
+              "  pm.expect(t.brand_brain).to.have.property(\"tier\");",
+              "});",
+              "pm.test(\"no placeholder text reaches the user\", () => {",
+              "  const whole = (t.text || \"\") + \" \" + (t.suggested_rewrite || \"\");",
+              "  pm.expect(whole.toLowerCase()).to.not.match(/(^|[^a-z])(undefined|null|nan)([^a-z]|$)/);",
+              "});",
+              "pm.collectionVariables.set(\"lastRequestId\", t.request_id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "chat"
+          ]
+        },
+        "description": "No test in the system has an earlier version (see the API doc, section 8.4), so the coach says so in one line and compares against this brand's best analysed creative instead.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"Is this better than my last version?\",\n  \"intent\": \"compare\",\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "200 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "chat"
+              ]
+            },
+            "description": "No test in the system has an earlier version (see the API doc, section 8.4), so the coach says so in one line and compares against this brand's best analysed creative instead.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"Is this better than my last version?\",\n  \"intent\": \"compare\",\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "200",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"role\": \"coach\",\n  \"text\": \"There is no earlier version of this script in the record to compare against.\\n\\nCompared to DI's best analysed creative, which scored 86/100, this script falls completely flat with an overall score of 5/100. That top-performing asset achieved its score by zeroing in on a distinct pain point angle and structuring a clear direct-response narrative for cold traffic, leading the viewer directly toward taking action.\\n\\nIn contrast, this submission consists of keyboard gibberish. It earned 1/10 on the hook and 0/10 across every other component, including problem setup, solution presentation, and call to action. To approach the standard set by the top creative, the copy needs an actual hook targeting document drafting friction, an authoritative presentation of DI's software, and an explicit next step for cold prospects.\",\n  \"intent\": \"compare\",\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"facts_used\": [\n    {\n      \"key\": \"overall_score\",\n      \"value\": 5,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"attention\",\n      \"value\": 5,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"resonance\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"conversion\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"creative\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"marketing_angle_execution\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"hook_score\",\n      \"value\": 1,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"problem__tension_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"solution__offer_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"social_proof__credibility_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"call_to_action_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"pacing__tightness_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"brand_voice_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"funnel_stage_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"marketing_angle_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"emotional_angle_status\",\n      \"value\": \"ANGLE OFF\"\n    },\n    {\n      \"key\": \"verdict_band\",\n      \"value\": \"Rewrite required\"\n    },\n    {\n      \"key\": \"marketing_angle\",\n      \"value\": \"original\"\n    },\n    {\n      \"key\": \"funnel_stage\",\n      \"value\": \"cold\"\n    },\n    {\n      \"key\": \"improvement_count\",\n      \"value\": 3\n    },\n    {\n      \"key\": \"days_with_data\",\n      \"value\": 4\n    },\n    {\n      \"key\": \"last_delivery_date\",\n      \"value\": \"2026-06-27\"\n    },\n    {\n      \"key\": \"currently_delivering\",\n      \"value\": false\n    },\n    {\n      \"key\": \"impressions_lifetime\",\n      \"value\": 8235\n    },\n    {\n      \"key\": \"clicks_lifetime\",\n      \"value\": 1012\n    },\n    {\n      \"key\": \"leads_lifetime\",\n      \"value\": 94\n    },\n    {\n      \"key\": \"spend_lifetime\",\n      \"value\": 3100.04\n    },\n    {\n      \"key\": \"ctr_pct_lifetime\",\n      \"value\": 12.29,\n      \"unit\": \"%\"\n    },\n    {\n      \"key\": \"cpm_lifetime\",\n      \"value\": 376.45\n    },\n    {\n      \"key\": \"cpc_lifetime\",\n      \"value\": 3.06\n    },\n    {\n      \"key\": \"cpl_lifetime\",\n      \"value\": 32.98\n    },\n    {\n      \"key\": \"ad_status\",\n      \"value\": \"ADSET_PAUSED\"\n    },\n    {\n      \"key\": \"best_brand_creative_score\",\n      \"value\": 86,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"worst_brand_creative_score\",\n      \"value\": 17,\n      \"unit\": \"/100\"\n    }\n  ],\n  \"evidence\": [\n    {\n      \"type\": \"ad_performance\",\n      \"ad_id\": \"120251070761150057\",\n      \"metric\": \"ctr_pct\",\n      \"value\": 12.29,\n      \"window\": \"lifetime\",\n      \"source\": \"meta_insights\"\n    },\n    {\n      \"type\": \"ad_performance\",\n      \"ad_id\": \"120251070761150057\",\n      \"metric\": \"cpm\",\n      \"value\": 376.45,\n      \"window\": \"lifetime\",\n      \"source\": \"meta_insights\"\n    },\n    {\n      \"type\": \"ad_performance\",\n      \"ad_id\": \"120251070761150057\",\n      \"metric\": \"cpc\",\n      \"value\": 3.06,\n      \"window\": \"lifetime\",\n      \"source\": \"meta_insights\"\n    },\n    {\n      \"type\": \"ad_performance\",\n      \"ad_id\": \"120251070761150057\",\n      \"metric\": \"impressions\",\n      \"value\": 8235,\n      \"window\": \"lifetime\",\n      \"source\": \"meta_insights\"\n    },\n    {\n      \"type\": \"ad_performance\",\n      \"ad_id\": \"120251070761150057\",\n      \"metric\": \"clicks\",\n      \"value\": 1012,\n      \"window\": \"lifetime\",\n      \"source\": \"meta_insights\"\n    },\n    {\n      \"type\": \"ad_performance\",\n      \"ad_id\": \"120251070761150057\",\n      \"metric\": \"leads\",\n      \"value\": 94,\n      \"window\": \"lifetime\",\n      \"source\": \"meta_insights\"\n    },\n    {\n      \"type\": \"brand_creative\",\n      \"ad_id\": \"120251070761160057\",\n      \"metric\": \"creative_score\",\n      \"value\": 86.0,\n      \"window\": \"latest\",\n      \"source\": \"mi_ad_creative_analyses\"\n    },\n    {\n      \"type\": \"brand_creative\",\n      \"ad_id\": \"120253441492710670\",\n      \"metric\": \"creative_score\",\n      \"value\": 86.0,\n      \"window\": \"latest\",\n      \"source\": \"mi_ad_creative_analyses\"\n    },\n    {\n      \"type\": \"brand_creative\",\n      \"ad_id\": \"120253762247400670\",\n      \"metric\": \"creative_score\",\n      \"value\": 86.0,\n      \"window\": \"latest\",\n      \"source\": \"mi_ad_creative_analyses\"\n    },\n    {\n      \"type\": \"competitor_ad\",\n      \"ad_id\": \"992070833180585\",\n      \"metric\": \"est_run_days\",\n      \"value\": 134,\n      \"window\": \"all\",\n      \"source\": \"mi_competitor_ads\"\n    },\n    {\n      \"type\": \"competitor_ad\",\n      \"ad_id\": \"1496666138675829\",\n      \"metric\": \"est_run_days\",\n      \"value\": 119,\n      \"window\": \"all\",\n      \"source\": \"mi_competitor_ads\"\n    },\n    {\n      \"type\": \"competitor_ad\",\n      \"ad_id\": \"1061283649587199\",\n      \"metric\": \"est_run_days\",\n      \"value\": 70,\n      \"window\": \"all\",\n      \"source\": \"mi_competitor_ads\"\n    },\n    {\n      \"type\": \"competitor_ad\",\n      \"ad_id\": \"1636775907391777\",\n      \"metric\": \"est_run_days\",\n      \"value\": 70,\n      \"window\": \"all\",\n      \"source\": \"mi_competitor_ads\"\n    },\n    {\n      \"type\": \"competitor_ad\",\n      \"ad_id\": \"2284025518999314\",\n      \"metric\": \"est_run_days\",\n      \"value\": 55,\n      \"window\": \"all\",\n      \"source\": \"mi_competitor_ads\"\n    },\n    {\n      \"type\": \"brand_brain\",\n      \"ad_id\": null,\n      \"metric\": \"tier\",\n      \"value\": \"A\",\n      \"window\": \"current\",\n      \"source\": \"brand_brains\"\n    }\n  ],\n  \"suggested_rewrite\": \"How many hours did your team spend drafting repetitive legal agreements this week?\\n\\nMeet DI: the automated drafting software built specifically for project legal teams who need to turn out flawless, compliant contracts in minutes, not hours.\\n\\nWatch a 3-minute interactive workflow demo and see how your firm can automate its next 50 contracts.\",\n  \"follow_ups\": [\n    \"Would you like to build out the full problem section for this draft?\",\n    \"Should we review the cold traffic call-to-action options?\",\n    \"Do you want to test an angle focused on billable hour leakage?\"\n  ],\n  \"confidence\": \"high\",\n  \"refused\": false,\n  \"brand_brain\": {\n    \"tier\": \"A\",\n    \"used\": true,\n    \"missing\": []\n  },\n  \"capabilities\": {\n    \"performance\": true,\n    \"compare\": false,\n    \"brand_fit\": true\n  },\n  \"grounded\": true,\n  \"fallback\": false,\n  \"fallback_reason\": null,\n  \"routed_by\": \"supplied\",\n  \"usage\": {\n    \"input_tokens\": 3530,\n    \"output_tokens\": 344\n  },\n  \"cost\": {\n    \"usd\": 0.003938,\n    \"inr\": 0.3465,\n    \"attempts\": 1,\n    \"model_requested\": \"gemini-flash-latest\",\n    \"model_priced\": \"gemini-3.8-flash\",\n    \"alias_confirmed\": false,\n    \"rate_confirmed\": true,\n    \"rate_effective_from\": \"2026-01-01\",\n    \"rate_input_per_1m_usd\": 0.75,\n    \"rate_output_per_1m_usd\": 3.75,\n    \"rate_cached_input_per_1m_usd\": 0.075,\n    \"usd_to_inr\": 88,\n    \"pricing_version\": \"2026-09-15.1\",\n    \"estimated\": true,\n    \"reason\": null,\n    \"notes\": [\n      \"gemini_alias_unconfirmed\",\n      \"fx_fixed_rate\"\n    ]\n  },\n  \"model\": \"gemini-flash-latest\",\n  \"prompt_version\": \"coach_p1\",\n  \"latency_ms\": 2954,\n  \"request_id\": \"09ca823e-415d-426f-b5b0-b624593aca96\",\n  \"created_at\": \"2026-09-25T09:23:24Z\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "9. Chat - ROAS is refused, not invented",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+              "const t = pm.response.json();",
+              "pm.test(\"carries the three keys coach_thread already stores\", () => {",
+              "  pm.expect(t.role).to.eql(\"coach\");",
+              "  pm.expect(t.text).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(t.intent).to.be.a(\"string\");",
+              "});",
+              "pm.test(\"carries the grounding block\", () => {",
+              "  pm.expect(t).to.have.property(\"facts_used\");",
+              "  pm.expect(t).to.have.property(\"evidence\");",
+              "  pm.expect(t).to.have.property(\"grounded\");",
+              "  pm.expect(t).to.have.property(\"fallback\");",
+              "  pm.expect(t).to.have.property(\"request_id\");",
+              "  pm.expect(t.brand_brain).to.have.property(\"tier\");",
+              "});",
+              "pm.test(\"no placeholder text reaches the user\", () => {",
+              "  const whole = (t.text || \"\") + \" \" + (t.suggested_rewrite || \"\");",
+              "  pm.expect(whole.toLowerCase()).to.not.match(/(^|[^a-z])(undefined|null|nan)([^a-z]|$)/);",
+              "});",
+              "pm.collectionVariables.set(\"lastRequestId\", t.request_id);",
+              "pm.test(\"declines rather than answering\", () => pm.expect(pm.response.json().refused).to.be.true);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "chat"
+          ]
+        },
+        "description": "Payments carry no ad id, so a per-ad ROAS cannot exist. The figure is absent from the fact set by construction, which is why the refusal is reliable.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"What's my ROAS on this ad?\",\n  \"intent\": null,\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "200 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "chat"
+              ]
+            },
+            "description": "Payments carry no ad id, so a per-ad ROAS cannot exist. The figure is absent from the fact set by construction, which is why the refusal is reliable.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"What's my ROAS on this ad?\",\n  \"intent\": null,\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "200",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"role\": \"coach\",\n  \"text\": \"Payments and revenue cannot be attributed to an individual ad in this system, so there is no ROAS figure available. I can only report on front-end delivery metrics like spend, clicks, and leads.\\n\\nThis ad is currently paused and not delivering. It ran for 4 days, with its last delivery on 2026-06-27. Over that lifetime window, the ad spent 3100.04 across 8235 impressions, producing 1012 clicks and 94 leads. The lifetime CTR was 12.29%, CPC was 3.06, CPM was 376.45, and Cost per lead was 32.98.\",\n  \"intent\": \"performance\",\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"facts_used\": [\n    {\n      \"key\": \"overall_score\",\n      \"value\": 5,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"attention\",\n      \"value\": 5,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"resonance\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"conversion\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"creative\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"marketing_angle_execution\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"hook_score\",\n      \"value\": 1,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"problem__tension_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"solution__offer_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"social_proof__credibility_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"call_to_action_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"pacing__tightness_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"brand_voice_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"funnel_stage_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"marketing_angle_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"emotional_angle_status\",\n      \"value\": \"ANGLE OFF\"\n    },\n    {\n      \"key\": \"verdict_band\",\n      \"value\": \"Rewrite required\"\n    },\n    {\n      \"key\": \"marketing_angle\",\n      \"value\": \"original\"\n    },\n    {\n      \"key\": \"funnel_stage\",\n      \"value\": \"cold\"\n    },\n    {\n      \"key\": \"improvement_count\",\n      \"value\": 3\n    },\n    {\n      \"key\": \"days_with_data\",\n      \"value\": 4\n    },\n    {\n      \"key\": \"last_delivery_date\",\n      \"value\": \"2026-06-27\"\n    },\n    {\n      \"key\": \"currently_delivering\",\n      \"value\": false\n    },\n    {\n      \"key\": \"impressions_lifetime\",\n      \"value\": 8235\n    },\n    {\n      \"key\": \"clicks_lifetime\",\n      \"value\": 1012\n    },\n    {\n      \"key\": \"leads_lifetime\",\n      \"value\": 94\n    },\n    {\n      \"key\": \"spend_lifetime\",\n      \"value\": 3100.04\n    },\n    {\n      \"key\": \"ctr_pct_lifetime\",\n      \"value\": 12.29,\n      \"unit\": \"%\"\n    },\n    {\n      \"key\": \"cpm_lifetime\",\n      \"value\": 376.45\n    },\n    {\n      \"key\": \"cpc_lifetime\",\n      \"value\": 3.06\n    },\n    {\n      \"key\": \"cpl_lifetime\",\n      \"value\": 32.98\n    },\n    {\n      \"key\": \"ad_status\",\n      \"value\": \"ADSET_PAUSED\"\n    }\n  ],\n  \"evidence\": [\n    {\n      \"type\": \"ad_performance\",\n      \"ad_id\": \"120251070761150057\",\n      \"metric\": \"ctr_pct\",\n      \"value\": 12.29,\n      \"window\": \"lifetime\",\n      \"source\": \"meta_insights\"\n    },\n    {\n      \"type\": \"ad_performance\",\n      \"ad_id\": \"120251070761150057\",\n      \"metric\": \"cpm\",\n      \"value\": 376.45,\n      \"window\": \"lifetime\",\n      \"source\": \"meta_insights\"\n    },\n    {\n      \"type\": \"ad_performance\",\n      \"ad_id\": \"120251070761150057\",\n      \"metric\": \"cpc\",\n      \"value\": 3.06,\n      \"window\": \"lifetime\",\n      \"source\": \"meta_insights\"\n    },\n    {\n      \"type\": \"ad_performance\",\n      \"ad_id\": \"120251070761150057\",\n      \"metric\": \"impressions\",\n      \"value\": 8235,\n      \"window\": \"lifetime\",\n      \"source\": \"meta_insights\"\n    },\n    {\n      \"type\": \"ad_performance\",\n      \"ad_id\": \"120251070761150057\",\n      \"metric\": \"clicks\",\n      \"value\": 1012,\n      \"window\": \"lifetime\",\n      \"source\": \"meta_insights\"\n    },\n    {\n      \"type\": \"ad_performance\",\n      \"ad_id\": \"120251070761150057\",\n      \"metric\": \"leads\",\n      \"value\": 94,\n      \"window\": \"lifetime\",\n      \"source\": \"meta_insights\"\n    },\n    {\n      \"type\": \"brand_brain\",\n      \"ad_id\": null,\n      \"metric\": \"tier\",\n      \"value\": \"A\",\n      \"window\": \"current\",\n      \"source\": \"brand_brains\"\n    }\n  ],\n  \"suggested_rewrite\": null,\n  \"follow_ups\": [\n    \"Would you like to review the cost per lead compared to your lead volume goals?\",\n    \"Should we look at rewriting the script to replace the gibberish text?\",\n    \"Do you want to evaluate the CTR and CPC metrics from its 4 days of delivery?\"\n  ],\n  \"confidence\": \"high\",\n  \"refused\": true,\n  \"brand_brain\": {\n    \"tier\": \"A\",\n    \"used\": true,\n    \"missing\": []\n  },\n  \"capabilities\": {\n    \"performance\": true,\n    \"compare\": false,\n    \"brand_fit\": true\n  },\n  \"grounded\": true,\n  \"fallback\": false,\n  \"fallback_reason\": null,\n  \"routed_by\": \"matched\",\n  \"usage\": {\n    \"input_tokens\": 3036,\n    \"output_tokens\": 259\n  },\n  \"cost\": {\n    \"usd\": 0.003248,\n    \"inr\": 0.2858,\n    \"attempts\": 1,\n    \"model_requested\": \"gemini-flash-latest\",\n    \"model_priced\": \"gemini-3.8-flash\",\n    \"alias_confirmed\": false,\n    \"rate_confirmed\": true,\n    \"rate_effective_from\": \"2026-01-01\",\n    \"rate_input_per_1m_usd\": 0.75,\n    \"rate_output_per_1m_usd\": 3.75,\n    \"rate_cached_input_per_1m_usd\": 0.075,\n    \"usd_to_inr\": 88,\n    \"pricing_version\": \"2026-09-15.1\",\n    \"estimated\": true,\n    \"reason\": null,\n    \"notes\": [\n      \"gemini_alias_unconfirmed\",\n      \"fx_fixed_rate\"\n    ]\n  },\n  \"model\": \"gemini-flash-latest\",\n  \"prompt_version\": \"coach_p1\",\n  \"latency_ms\": 2375,\n  \"request_id\": \"4ddb0f16-5182-4d39-87d3-797906b88787\",\n  \"created_at\": \"2026-09-25T09:23:27Z\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "10. Chat - off topic",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+              "const t = pm.response.json();",
+              "pm.test(\"carries the three keys coach_thread already stores\", () => {",
+              "  pm.expect(t.role).to.eql(\"coach\");",
+              "  pm.expect(t.text).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(t.intent).to.be.a(\"string\");",
+              "});",
+              "pm.test(\"carries the grounding block\", () => {",
+              "  pm.expect(t).to.have.property(\"facts_used\");",
+              "  pm.expect(t).to.have.property(\"evidence\");",
+              "  pm.expect(t).to.have.property(\"grounded\");",
+              "  pm.expect(t).to.have.property(\"fallback\");",
+              "  pm.expect(t).to.have.property(\"request_id\");",
+              "  pm.expect(t.brand_brain).to.have.property(\"tier\");",
+              "});",
+              "pm.test(\"no placeholder text reaches the user\", () => {",
+              "  const whole = (t.text || \"\") + \" \" + (t.suggested_rewrite || \"\");",
+              "  pm.expect(whole.toLowerCase()).to.not.match(/(^|[^a-z])(undefined|null|nan)([^a-z]|$)/);",
+              "});",
+              "pm.collectionVariables.set(\"lastRequestId\", t.request_id);",
+              "pm.test(\"declines rather than answering\", () => pm.expect(pm.response.json().refused).to.be.true);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "chat"
+          ]
+        },
+        "description": "One friendly line back to the script. Not a score summary, which is what the coach that shipped before this one did.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"Write me an email to my landlord about a deposit refund\",\n  \"intent\": null,\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "200 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "chat"
+              ]
+            },
+            "description": "One friendly line back to the script. Not a score summary, which is what the coach that shipped before this one did.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"Write me an email to my landlord about a deposit refund\",\n  \"intent\": null,\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "200",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"role\": \"coach\",\n  \"text\": \"I can only help with reviewing and writing ad scripts for your brand. I can help you break down the review scores for this cold ad script or craft a proper hook addressing legal document drafting.\",\n  \"intent\": \"out_of_scope\",\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"facts_used\": [\n    {\n      \"key\": \"overall_score\",\n      \"value\": 5,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"attention\",\n      \"value\": 5,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"resonance\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"conversion\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"creative\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"marketing_angle_execution\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"hook_score\",\n      \"value\": 1,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"problem__tension_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"solution__offer_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"social_proof__credibility_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"call_to_action_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"pacing__tightness_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"brand_voice_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"funnel_stage_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"marketing_angle_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"emotional_angle_status\",\n      \"value\": \"ANGLE OFF\"\n    },\n    {\n      \"key\": \"verdict_band\",\n      \"value\": \"Rewrite required\"\n    },\n    {\n      \"key\": \"marketing_angle\",\n      \"value\": \"original\"\n    },\n    {\n      \"key\": \"funnel_stage\",\n      \"value\": \"cold\"\n    },\n    {\n      \"key\": \"improvement_count\",\n      \"value\": 3\n    }\n  ],\n  \"evidence\": [\n    {\n      \"type\": \"brand_brain\",\n      \"ad_id\": null,\n      \"metric\": \"tier\",\n      \"value\": \"A\",\n      \"window\": \"current\",\n      \"source\": \"brand_brains\"\n    }\n  ],\n  \"suggested_rewrite\": null,\n  \"follow_ups\": [\n    \"Would you like to see a problem-focused hook for this ad?\",\n    \"Should we write a full cold-traffic script draft for DI?\"\n  ],\n  \"confidence\": \"high\",\n  \"refused\": true,\n  \"brand_brain\": {\n    \"tier\": \"A\",\n    \"used\": true,\n    \"missing\": []\n  },\n  \"capabilities\": {\n    \"performance\": false,\n    \"compare\": false,\n    \"brand_fit\": true\n  },\n  \"grounded\": true,\n  \"fallback\": false,\n  \"fallback_reason\": null,\n  \"routed_by\": \"matched\",\n  \"usage\": {\n    \"input_tokens\": 2805,\n    \"output_tokens\": 115\n  },\n  \"cost\": {\n    \"usd\": 0.002535,\n    \"inr\": 0.2231,\n    \"attempts\": 1,\n    \"model_requested\": \"gemini-flash-latest\",\n    \"model_priced\": \"gemini-3.8-flash\",\n    \"alias_confirmed\": false,\n    \"rate_confirmed\": true,\n    \"rate_effective_from\": \"2026-01-01\",\n    \"rate_input_per_1m_usd\": 0.75,\n    \"rate_output_per_1m_usd\": 3.75,\n    \"rate_cached_input_per_1m_usd\": 0.075,\n    \"usd_to_inr\": 88,\n    \"pricing_version\": \"2026-09-15.1\",\n    \"estimated\": true,\n    \"reason\": null,\n    \"notes\": [\n      \"gemini_alias_unconfirmed\",\n      \"fx_fixed_rate\"\n    ]\n  },\n  \"model\": \"gemini-flash-latest\",\n  \"prompt_version\": \"coach_p1\",\n  \"latency_ms\": 2329,\n  \"request_id\": \"bc9cbd59-09cc-46ff-85cf-139b5fe0202e\",\n  \"created_at\": \"2026-09-25T09:23:29Z\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "11. Chat - brand with no Brand Brain (tier C)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+              "const t = pm.response.json();",
+              "pm.test(\"carries the three keys coach_thread already stores\", () => {",
+              "  pm.expect(t.role).to.eql(\"coach\");",
+              "  pm.expect(t.text).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(t.intent).to.be.a(\"string\");",
+              "});",
+              "pm.test(\"carries the grounding block\", () => {",
+              "  pm.expect(t).to.have.property(\"facts_used\");",
+              "  pm.expect(t).to.have.property(\"evidence\");",
+              "  pm.expect(t).to.have.property(\"grounded\");",
+              "  pm.expect(t).to.have.property(\"fallback\");",
+              "  pm.expect(t).to.have.property(\"request_id\");",
+              "  pm.expect(t.brand_brain).to.have.property(\"tier\");",
+              "});",
+              "pm.test(\"no placeholder text reaches the user\", () => {",
+              "  const whole = (t.text || \"\") + \" \" + (t.suggested_rewrite || \"\");",
+              "  pm.expect(whole.toLowerCase()).to.not.match(/(^|[^a-z])(undefined|null|nan)([^a-z]|$)/);",
+              "});",
+              "pm.collectionVariables.set(\"lastRequestId\", t.request_id);",
+              "pm.test(\"tier C\", () => pm.expect(pm.response.json().brand_brain.tier).to.eql(\"C\"));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "chat"
+          ]
+        },
+        "description": "DEGRADED. Craft mode: still useful, and it says once what is missing. 14 of 20 brands have no Brand Brain, so this is a common path.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"test_id\": \"57ee67bb-afde-4fa0-8039-bbe72b66add4\",\n  \"message\": \"Does this sound like us?\",\n  \"intent\": \"brand_fit\",\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": null\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "200 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "chat"
+              ]
+            },
+            "description": "DEGRADED. Craft mode: still useful, and it says once what is missing. 14 of 20 brands have no Brand Brain, so this is a common path.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"test_id\": \"57ee67bb-afde-4fa0-8039-bbe72b66add4\",\n  \"message\": \"Does this sound like us?\",\n  \"intent\": \"brand_fit\",\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": null\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "200",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"role\": \"coach\",\n  \"text\": \"I cannot judge brand fit because there is no Brand Brain on file for this brand. I have no records of your brand guidelines, voice profile, target persona, or standard messaging to compare this draft against.\\n\\nI can still assess the script on pure copywriting craft. The hook identifies a clear professional pain point around standard resumes failing for board appointments, but the midsection drags with abstract concepts like visibility and positioning before offering the concrete webinar solution.\\n\\nThe overall score sits at 58/100, with Attention at 56/100 and Resonance at 54/100. If you want to tighten the copy, sharpen the transition from the networking problem directly into what the webinar provides instead of listing broad director requirements.\",\n  \"intent\": \"brand_fit\",\n  \"test_id\": \"57ee67bb-afde-4fa0-8039-bbe72b66add4\",\n  \"facts_used\": [\n    {\n      \"key\": \"overall_score\",\n      \"value\": 58,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"attention\",\n      \"value\": 56,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"resonance\",\n      \"value\": 54,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"conversion\",\n      \"value\": 62,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"creative\",\n      \"value\": 62,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"marketing_angle\",\n      \"value\": \"original\"\n    },\n    {\n      \"key\": \"funnel_stage\",\n      \"value\": \"cold\"\n    },\n    {\n      \"key\": \"improvement_count\",\n      \"value\": 0\n    }\n  ],\n  \"evidence\": [],\n  \"suggested_rewrite\": \"One of the hard truths about board appointments is this: standard corporate resumes fail in the boardroom. Board positions are not handed to the candidate with the best CV. Global executive talent data suggests that nearly 80% of executive and board opportunities are filled through networks, referrals, and targeted outreach. Even with proven leadership and deep expertise, qualified professionals get bypassed simply because board decision-makers do not know them. To learn how over 5000 experienced leaders position themselves to be discovered, join the upcoming Board Readiness Webinar by World Development Corporation’s Directors’ Institute. Register through the link below.\",\n  \"follow_ups\": [\n    \"Would you like to focus on improving the Attention score of 56/100?\",\n    \"Should we rework the call to action to boost the Conversion score above 62/100?\",\n    \"Do you want to upload brand guidelines so we can evaluate brand fit properly?\"\n  ],\n  \"confidence\": \"low\",\n  \"refused\": true,\n  \"brand_brain\": {\n    \"tier\": \"C\",\n    \"used\": false,\n    \"missing\": [\n      \"businessType\",\n      \"idealCustomer\",\n      \"brandVoice\",\n      \"language\",\n      \"trafficChannels\",\n      \"salesCycle\",\n      \"competitors\",\n      \"marketingGoal\",\n      \"journey\"\n    ]\n  },\n  \"capabilities\": {\n    \"performance\": false,\n    \"compare\": false,\n    \"brand_fit\": false\n  },\n  \"grounded\": true,\n  \"fallback\": false,\n  \"fallback_reason\": null,\n  \"routed_by\": \"supplied\",\n  \"usage\": {\n    \"input_tokens\": 1704,\n    \"output_tokens\": 383\n  },\n  \"cost\": {\n    \"usd\": 0.002714,\n    \"inr\": 0.2388,\n    \"attempts\": 1,\n    \"model_requested\": \"gemini-flash-latest\",\n    \"model_priced\": \"gemini-3.8-flash\",\n    \"alias_confirmed\": false,\n    \"rate_confirmed\": true,\n    \"rate_effective_from\": \"2026-01-01\",\n    \"rate_input_per_1m_usd\": 0.75,\n    \"rate_output_per_1m_usd\": 3.75,\n    \"rate_cached_input_per_1m_usd\": 0.075,\n    \"usd_to_inr\": 88,\n    \"pricing_version\": \"2026-09-15.1\",\n    \"estimated\": true,\n    \"reason\": null,\n    \"notes\": [\n      \"gemini_alias_unconfirmed\",\n      \"fx_fixed_rate\"\n    ]\n  },\n  \"model\": \"gemini-flash-latest\",\n  \"prompt_version\": \"coach_p1\",\n  \"latency_ms\": 3186,\n  \"request_id\": \"0e4e7fb9-fd47-4342-ac4c-531691a09ec8\",\n  \"created_at\": \"2026-09-25T09:23:33Z\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "12. Chat - the underlying review failed",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+              "const t = pm.response.json();",
+              "pm.test(\"carries the three keys coach_thread already stores\", () => {",
+              "  pm.expect(t.role).to.eql(\"coach\");",
+              "  pm.expect(t.text).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(t.intent).to.be.a(\"string\");",
+              "});",
+              "pm.test(\"carries the grounding block\", () => {",
+              "  pm.expect(t).to.have.property(\"facts_used\");",
+              "  pm.expect(t).to.have.property(\"evidence\");",
+              "  pm.expect(t).to.have.property(\"grounded\");",
+              "  pm.expect(t).to.have.property(\"fallback\");",
+              "  pm.expect(t).to.have.property(\"request_id\");",
+              "  pm.expect(t.brand_brain).to.have.property(\"tier\");",
+              "});",
+              "pm.test(\"no placeholder text reaches the user\", () => {",
+              "  const whole = (t.text || \"\") + \" \" + (t.suggested_rewrite || \"\");",
+              "  pm.expect(whole.toLowerCase()).to.not.match(/(^|[^a-z])(undefined|null|nan)([^a-z]|$)/);",
+              "});",
+              "pm.collectionVariables.set(\"lastRequestId\", t.request_id);",
+              "pm.test(\"declines rather than answering\", () => pm.expect(pm.response.json().refused).to.be.true);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "chat"
+          ]
+        },
+        "description": "DEGRADED. The stored 50/100 is a placeholder. The coach must not defend it.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"test_id\": \"b10eb698-d70a-4a56-920f-3d68192f7319\",\n  \"message\": \"Why did I get 50 out of 100?\",\n  \"intent\": null,\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": null\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "200 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "chat"
+              ]
+            },
+            "description": "DEGRADED. The stored 50/100 is a placeholder. The coach must not defend it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"test_id\": \"b10eb698-d70a-4a56-920f-3d68192f7319\",\n  \"message\": \"Why did I get 50 out of 100?\",\n  \"intent\": null,\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": null\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "200",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"role\": \"coach\",\n  \"text\": \"I cannot explain that score because the automated review did not complete for this script. Any figure you see right now is just an unverified placeholder, not a real assessment of your copy.\\n\\nTrying to break down that number would be misleading. The right next step is to re-run the review so you get actual section scores and actionable feedback on the hook, body, and call to action.\",\n  \"intent\": \"explain\",\n  \"test_id\": \"b10eb698-d70a-4a56-920f-3d68192f7319\",\n  \"facts_used\": [\n    {\n      \"key\": \"review_completed\",\n      \"value\": false\n    }\n  ],\n  \"evidence\": [],\n  \"suggested_rewrite\": null,\n  \"follow_ups\": [\n    \"Would you like to re-run the review now?\",\n    \"Should we look at the hook mechanics while waiting for a fresh test?\"\n  ],\n  \"confidence\": \"low\",\n  \"refused\": true,\n  \"brand_brain\": {\n    \"tier\": \"C\",\n    \"used\": false,\n    \"missing\": [\n      \"businessType\",\n      \"idealCustomer\",\n      \"brandVoice\",\n      \"language\",\n      \"trafficChannels\",\n      \"salesCycle\",\n      \"competitors\",\n      \"marketingGoal\",\n      \"journey\"\n    ]\n  },\n  \"capabilities\": {\n    \"performance\": false,\n    \"compare\": false,\n    \"brand_fit\": false\n  },\n  \"grounded\": true,\n  \"fallback\": false,\n  \"fallback_reason\": null,\n  \"routed_by\": \"matched\",\n  \"usage\": {\n    \"input_tokens\": 1658,\n    \"output_tokens\": 158\n  },\n  \"cost\": {\n    \"usd\": 0.001836,\n    \"inr\": 0.1616,\n    \"attempts\": 1,\n    \"model_requested\": \"gemini-flash-latest\",\n    \"model_priced\": \"gemini-3.8-flash\",\n    \"alias_confirmed\": false,\n    \"rate_confirmed\": true,\n    \"rate_effective_from\": \"2026-01-01\",\n    \"rate_input_per_1m_usd\": 0.75,\n    \"rate_output_per_1m_usd\": 3.75,\n    \"rate_cached_input_per_1m_usd\": 0.075,\n    \"usd_to_inr\": 88,\n    \"pricing_version\": \"2026-09-15.1\",\n    \"estimated\": true,\n    \"reason\": null,\n    \"notes\": [\n      \"gemini_alias_unconfirmed\",\n      \"fx_fixed_rate\"\n    ]\n  },\n  \"model\": \"gemini-flash-latest\",\n  \"prompt_version\": \"coach_p1\",\n  \"latency_ms\": 2016,\n  \"request_id\": \"feff0422-6d49-43ae-adba-1eb34d99a573\",\n  \"created_at\": \"2026-09-25T09:23:35Z\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "13. Chat - script was never published",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+              "const t = pm.response.json();",
+              "pm.test(\"carries the three keys coach_thread already stores\", () => {",
+              "  pm.expect(t.role).to.eql(\"coach\");",
+              "  pm.expect(t.text).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(t.intent).to.be.a(\"string\");",
+              "});",
+              "pm.test(\"carries the grounding block\", () => {",
+              "  pm.expect(t).to.have.property(\"facts_used\");",
+              "  pm.expect(t).to.have.property(\"evidence\");",
+              "  pm.expect(t).to.have.property(\"grounded\");",
+              "  pm.expect(t).to.have.property(\"fallback\");",
+              "  pm.expect(t).to.have.property(\"request_id\");",
+              "  pm.expect(t.brand_brain).to.have.property(\"tier\");",
+              "});",
+              "pm.test(\"no placeholder text reaches the user\", () => {",
+              "  const whole = (t.text || \"\") + \" \" + (t.suggested_rewrite || \"\");",
+              "  pm.expect(whole.toLowerCase()).to.not.match(/(^|[^a-z])(undefined|null|nan)([^a-z]|$)/);",
+              "});",
+              "pm.collectionVariables.set(\"lastRequestId\", t.request_id);",
+              "pm.test(\"declines rather than answering\", () => pm.expect(pm.response.json().refused).to.be.true);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "chat"
+          ]
+        },
+        "description": "DEGRADED. No source_ad_id, so there is no delivery to report.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"test_id\": \"7f5572ba-e202-4c10-9d44-4c346fdec89c\",\n  \"message\": \"How is this ad performing so far?\",\n  \"intent\": null,\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "200 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "chat"
+              ]
+            },
+            "description": "DEGRADED. No source_ad_id, so there is no delivery to report.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"test_id\": \"7f5572ba-e202-4c10-9d44-4c346fdec89c\",\n  \"message\": \"How is this ad performing so far?\",\n  \"intent\": null,\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "200",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"role\": \"coach\",\n  \"text\": \"I cannot report on how this ad is performing because there is no live delivery data available for it. The figures on record are strictly pre-launch review scores assessing the copy, not real-world metrics like impressions, spend, clicks, or leads.\\n\\nI can help you review the script copy, break down the evaluation scores, or work on tightening specific sections before you put budget behind it.\",\n  \"intent\": \"performance\",\n  \"test_id\": \"7f5572ba-e202-4c10-9d44-4c346fdec89c\",\n  \"facts_used\": [\n    {\n      \"key\": \"overall_score\",\n      \"value\": 81,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"attention\",\n      \"value\": 89,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"resonance\",\n      \"value\": 81,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"conversion\",\n      \"value\": 80,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"creative\",\n      \"value\": 71,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"marketing_angle\",\n      \"value\": \"original\"\n    },\n    {\n      \"key\": \"funnel_stage\",\n      \"value\": \"cold\"\n    },\n    {\n      \"key\": \"improvement_count\",\n      \"value\": 0\n    }\n  ],\n  \"evidence\": [\n    {\n      \"type\": \"brand_brain\",\n      \"ad_id\": null,\n      \"metric\": \"tier\",\n      \"value\": \"A\",\n      \"window\": \"current\",\n      \"source\": \"brand_brains\"\n    }\n  ],\n  \"suggested_rewrite\": null,\n  \"follow_ups\": [\n    \"Would you like an analysis of why the creative score landed at 71/100?\",\n    \"Should we rework the opening hook to better address drafting workloads?\",\n    \"Do you want to review the call to action for cold legal audiences?\"\n  ],\n  \"confidence\": \"low\",\n  \"refused\": true,\n  \"brand_brain\": {\n    \"tier\": \"A\",\n    \"used\": true,\n    \"missing\": []\n  },\n  \"capabilities\": {\n    \"performance\": false,\n    \"compare\": false,\n    \"brand_fit\": true\n  },\n  \"grounded\": true,\n  \"fallback\": false,\n  \"fallback_reason\": null,\n  \"routed_by\": \"matched\",\n  \"usage\": {\n    \"input_tokens\": 1905,\n    \"output_tokens\": 180\n  },\n  \"cost\": {\n    \"usd\": 0.002104,\n    \"inr\": 0.1852,\n    \"attempts\": 1,\n    \"model_requested\": \"gemini-flash-latest\",\n    \"model_priced\": \"gemini-3.8-flash\",\n    \"alias_confirmed\": false,\n    \"rate_confirmed\": true,\n    \"rate_effective_from\": \"2026-01-01\",\n    \"rate_input_per_1m_usd\": 0.75,\n    \"rate_output_per_1m_usd\": 3.75,\n    \"rate_cached_input_per_1m_usd\": 0.075,\n    \"usd_to_inr\": 88,\n    \"pricing_version\": \"2026-09-15.1\",\n    \"estimated\": true,\n    \"reason\": null,\n    \"notes\": [\n      \"gemini_alias_unconfirmed\",\n      \"fx_fixed_rate\"\n    ]\n  },\n  \"model\": \"gemini-flash-latest\",\n  \"prompt_version\": \"coach_p1\",\n  \"latency_ms\": 2813,\n  \"request_id\": \"a560a2bf-ff30-4eea-aa24-45fb5f02be9a\",\n  \"created_at\": \"2026-09-25T09:23:38Z\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "14. Chat - Hinglish question, Hinglish answer",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+              "const t = pm.response.json();",
+              "pm.test(\"carries the three keys coach_thread already stores\", () => {",
+              "  pm.expect(t.role).to.eql(\"coach\");",
+              "  pm.expect(t.text).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(t.intent).to.be.a(\"string\");",
+              "});",
+              "pm.test(\"carries the grounding block\", () => {",
+              "  pm.expect(t).to.have.property(\"facts_used\");",
+              "  pm.expect(t).to.have.property(\"evidence\");",
+              "  pm.expect(t).to.have.property(\"grounded\");",
+              "  pm.expect(t).to.have.property(\"fallback\");",
+              "  pm.expect(t).to.have.property(\"request_id\");",
+              "  pm.expect(t.brand_brain).to.have.property(\"tier\");",
+              "});",
+              "pm.test(\"no placeholder text reaches the user\", () => {",
+              "  const whole = (t.text || \"\") + \" \" + (t.suggested_rewrite || \"\");",
+              "  pm.expect(whole.toLowerCase()).to.not.match(/(^|[^a-z])(undefined|null|nan)([^a-z]|$)/);",
+              "});",
+              "pm.collectionVariables.set(\"lastRequestId\", t.request_id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "chat"
+          ]
+        },
+        "description": "Normal for these teams. The question is understood and answered in kind.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"hook ko kaise improve karun?\",\n  \"intent\": null,\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "200 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "chat"
+              ]
+            },
+            "description": "Normal for these teams. The question is understood and answered in kind.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"hook ko kaise improve karun?\",\n  \"intent\": null,\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "200",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"role\": \"coach\",\n  \"text\": \"Aapka current script sirf random keyboard keystrokes hai, jisme koi actual copy ya structure nahi hai. Hook section ko 1/10 mila hai kyunki audience ke samne koi topic ya hook line aayi hi nahi. Isko sudharne ke liye pure draft ko ground up se likhna hoga.\\n\\nCold audience ke liye hook direct pain point par target hona chahiye. Legal professionals jo manual document drafting me ghanton phas jate hain, unhe unke routine friction par rokiye. DI ke top performing creative ne 86/100 score kiya tha kyunki usne cold stage par clear pain point angle pakda tha.\\n\\nOpening frame me sidhe drafting fatigue aur wasted billable hours ko samne laiye, jisse project lawyers ko pehle teen second me hi relevance samajh aaye.\",\n  \"intent\": \"improve\",\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"facts_used\": [\n    {\n      \"key\": \"overall_score\",\n      \"value\": 5,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"attention\",\n      \"value\": 5,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"resonance\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"conversion\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"creative\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"marketing_angle_execution\",\n      \"value\": 0,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"hook_score\",\n      \"value\": 1,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"problem__tension_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"solution__offer_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"social_proof__credibility_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"call_to_action_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"pacing__tightness_score\",\n      \"value\": 0,\n      \"unit\": \"/10\"\n    },\n    {\n      \"key\": \"brand_voice_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"funnel_stage_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"marketing_angle_fit\",\n      \"value\": \"Weak\"\n    },\n    {\n      \"key\": \"emotional_angle_status\",\n      \"value\": \"ANGLE OFF\"\n    },\n    {\n      \"key\": \"verdict_band\",\n      \"value\": \"Rewrite required\"\n    },\n    {\n      \"key\": \"marketing_angle\",\n      \"value\": \"original\"\n    },\n    {\n      \"key\": \"funnel_stage\",\n      \"value\": \"cold\"\n    },\n    {\n      \"key\": \"improvement_count\",\n      \"value\": 3\n    },\n    {\n      \"key\": \"best_brand_creative_score\",\n      \"value\": 86,\n      \"unit\": \"/100\"\n    },\n    {\n      \"key\": \"worst_brand_creative_score\",\n      \"value\": 17,\n      \"unit\": \"/100\"\n    }\n  ],\n  \"evidence\": [\n    {\n      \"type\": \"brand_creative\",\n      \"ad_id\": \"120251070761160057\",\n      \"metric\": \"creative_score\",\n      \"value\": 86.0,\n      \"window\": \"latest\",\n      \"source\": \"mi_ad_creative_analyses\"\n    },\n    {\n      \"type\": \"brand_creative\",\n      \"ad_id\": \"120253441492710670\",\n      \"metric\": \"creative_score\",\n      \"value\": 86.0,\n      \"window\": \"latest\",\n      \"source\": \"mi_ad_creative_analyses\"\n    },\n    {\n      \"type\": \"brand_creative\",\n      \"ad_id\": \"120253762247400670\",\n      \"metric\": \"creative_score\",\n      \"value\": 86.0,\n      \"window\": \"latest\",\n      \"source\": \"mi_ad_creative_analyses\"\n    },\n    {\n      \"type\": \"competitor_ad\",\n      \"ad_id\": \"992070833180585\",\n      \"metric\": \"est_run_days\",\n      \"value\": 134,\n      \"window\": \"all\",\n      \"source\": \"mi_competitor_ads\"\n    },\n    {\n      \"type\": \"competitor_ad\",\n      \"ad_id\": \"1496666138675829\",\n      \"metric\": \"est_run_days\",\n      \"value\": 119,\n      \"window\": \"all\",\n      \"source\": \"mi_competitor_ads\"\n    },\n    {\n      \"type\": \"competitor_ad\",\n      \"ad_id\": \"1061283649587199\",\n      \"metric\": \"est_run_days\",\n      \"value\": 70,\n      \"window\": \"all\",\n      \"source\": \"mi_competitor_ads\"\n    },\n    {\n      \"type\": \"competitor_ad\",\n      \"ad_id\": \"1636775907391777\",\n      \"metric\": \"est_run_days\",\n      \"value\": 70,\n      \"window\": \"all\",\n      \"source\": \"mi_competitor_ads\"\n    },\n    {\n      \"type\": \"competitor_ad\",\n      \"ad_id\": \"2284025518999314\",\n      \"metric\": \"est_run_days\",\n      \"value\": 55,\n      \"window\": \"all\",\n      \"source\": \"mi_competitor_ads\"\n    },\n    {\n      \"type\": \"brand_brain\",\n      \"ad_id\": null,\n      \"metric\": \"tier\",\n      \"value\": \"A\",\n      \"window\": \"current\",\n      \"source\": \"brand_brains\"\n    }\n  ],\n  \"suggested_rewrite\": \"How many hours did your legal team lose to manual contract drafting this week? DI streamlines document workflows so you deliver compliant agreements in minutes without sacrificing precision.\",\n  \"follow_ups\": [\n    \"Kya aap cold audience ke liye problem-solution script format dekhna chahte hain?\",\n    \"Review ke baki 3 improvements ke hisab se draft adjust karein?\"\n  ],\n  \"confidence\": \"high\",\n  \"refused\": false,\n  \"brand_brain\": {\n    \"tier\": \"A\",\n    \"used\": true,\n    \"missing\": []\n  },\n  \"capabilities\": {\n    \"performance\": false,\n    \"compare\": false,\n    \"brand_fit\": true\n  },\n  \"grounded\": true,\n  \"fallback\": false,\n  \"fallback_reason\": null,\n  \"routed_by\": \"matched\",\n  \"usage\": {\n    \"input_tokens\": 3303,\n    \"output_tokens\": 287\n  },\n  \"cost\": {\n    \"usd\": 0.003553,\n    \"inr\": 0.3127,\n    \"attempts\": 1,\n    \"model_requested\": \"gemini-flash-latest\",\n    \"model_priced\": \"gemini-3.8-flash\",\n    \"alias_confirmed\": false,\n    \"rate_confirmed\": true,\n    \"rate_effective_from\": \"2026-01-01\",\n    \"rate_input_per_1m_usd\": 0.75,\n    \"rate_output_per_1m_usd\": 3.75,\n    \"rate_cached_input_per_1m_usd\": 0.075,\n    \"usd_to_inr\": 88,\n    \"pricing_version\": \"2026-09-15.1\",\n    \"estimated\": true,\n    \"reason\": null,\n    \"notes\": [\n      \"gemini_alias_unconfirmed\",\n      \"fx_fixed_rate\"\n    ]\n  },\n  \"model\": \"gemini-flash-latest\",\n  \"prompt_version\": \"coach_p1\",\n  \"latency_ms\": 3859,\n  \"request_id\": \"7c1aea74-d1ef-4104-9bee-9bd48139c455\",\n  \"created_at\": \"2026-09-25T09:23:43Z\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "15. Cross-brand request is refused (403)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 403\", () => pm.response.to.have.status(403));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "chat"
+          ]
+        },
+        "description": "session.brand_id must match the test's brand. This gate stops one brand's coaching from quoting another brand's data.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"Why is the hook weak?\",\n  \"intent\": null,\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"ea8c5046-ae40-41cf-957f-de7b35cbfb17\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "403 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "chat"
+              ]
+            },
+            "description": "session.brand_id must match the test's brand. This gate stops one brand's coaching from quoting another brand's data.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"Why is the hook weak?\",\n  \"intent\": null,\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"ea8c5046-ae40-41cf-957f-de7b35cbfb17\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "403",
+          "code": 403,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"detail\": \"This test belongs to a different brand.\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "16. No script_lab permission (403)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 403\", () => pm.response.to.have.status(403));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "user"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "crm"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "chat"
+          ]
+        },
+        "description": "Permission comes from the role's permission list, not its name.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"Why is the hook weak?\",\n  \"intent\": null,\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "403 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "user"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "crm"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "chat"
+              ]
+            },
+            "description": "Permission comes from the role's permission list, not its name.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"Why is the hook weak?\",\n  \"intent\": null,\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "403",
+          "code": 403,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"detail\": \"This user's role does not include the 'script_lab' permission.\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "17. Unknown test_id (404)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 404\", () => pm.response.to.have.status(404));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "chat"
+          ]
+        },
+        "description": "The test does not exist.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"test_id\": \"00000000-0000-0000-0000-000000000000\",\n  \"message\": \"Why is the hook weak?\",\n  \"intent\": null,\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "404 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "chat"
+              ]
+            },
+            "description": "The test does not exist.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"test_id\": \"00000000-0000-0000-0000-000000000000\",\n  \"message\": \"Why is the hook weak?\",\n  \"intent\": null,\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "404",
+          "code": 404,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"detail\": \"test_id not found\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "18. Thread limit reached (409)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 409\", () => pm.response.to.have.status(409));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "chat"
+          ]
+        },
+        "description": "40 user turns. Offer the user a new conversation.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"And another thing?\",\n  \"intent\": null,\n  \"thread\": [\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 0\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 1\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 2\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 3\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 4\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 5\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 6\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 7\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 8\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 9\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 10\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 11\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 12\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 13\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 14\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 15\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 16\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 17\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 18\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 19\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 20\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 21\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 22\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 23\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 24\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 25\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 26\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 27\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 28\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 29\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 30\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 31\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 32\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 33\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 34\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 35\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 36\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 37\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 38\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 39\"\n    }\n  ],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "409 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "chat"
+              ]
+            },
+            "description": "40 user turns. Offer the user a new conversation.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"And another thing?\",\n  \"intent\": null,\n  \"thread\": [\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 0\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 1\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 2\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 3\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 4\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 5\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 6\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 7\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 8\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 9\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 10\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 11\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 12\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 13\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 14\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 15\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 16\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 17\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 18\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 19\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 20\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 21\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 22\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 23\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 24\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 25\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 26\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 27\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 28\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 29\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 30\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 31\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 32\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 33\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 34\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 35\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 36\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 37\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 38\"\n    },\n    {\n      \"role\": \"user\",\n      \"text\": \"turn 39\"\n    }\n  ],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "409",
+          "code": 409,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"detail\": \"thread_limit\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "19. Validation - message too long (422)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 422\", () => pm.response.to.have.status(422));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "chat"
+          ]
+        },
+        "description": "1 to 1000 characters.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n  \"intent\": null,\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "422 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "chat"
+              ]
+            },
+            "description": "1 to 1000 characters.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n  \"intent\": null,\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "422",
+          "code": 422,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"detail\": \"`message` must be 1 to 1000 characters.\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "20. Validation - unknown intent (422)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 422\", () => pm.response.to.have.status(422));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "chat"
+          ]
+        },
+        "description": "Send one of the ten intents, or null for free text.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"Why is the hook weak?\",\n  \"intent\": \"make_it_viral\",\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "422 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "chat"
+              ]
+            },
+            "description": "Send one of the ten intents, or null for free text.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n  \"message\": \"Why is the hook weak?\",\n  \"intent\": \"make_it_viral\",\n  \"thread\": [],\n  \"session\": {\n    \"user_id\": \"postman-user\",\n    \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "422",
+          "code": 422,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"detail\": \"`intent` must be one of: explain, diagnose, prioritize, improve, rewrite, compare, performance, scale, brand_fit, out_of_scope.\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "21. Feedback - thumbs up",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"recorded\", () => pm.expect(pm.response.json().recorded).to.be.true);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/feedback",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "feedback"
+          ]
+        },
+        "description": "Rates the turn from request 4 onwards (the collection chains the id).\nSend the turn's request_id with the thumb.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"request_id\": \"{{lastRequestId}}\",\n  \"rating\": \"up\",\n  \"reason\": null\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "200 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/feedback",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "feedback"
+              ]
+            },
+            "description": "Rates the turn from request 4 onwards (the collection chains the id).\nSend the turn's request_id with the thumb.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"request_id\": \"{{lastRequestId}}\",\n  \"rating\": \"up\",\n  \"reason\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "200",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"recorded\": true,\n  \"request_id\": \"7c1aea74-d1ef-4104-9bee-9bd48139c455\",\n  \"rating\": \"up\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "22. Feedback - thumbs down with a reason",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"recorded\", () => pm.expect(pm.response.json().recorded).to.be.true);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/feedback",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "feedback"
+          ]
+        },
+        "description": "`reason` is the valuable half: a rate says something is wrong, a reason says what. These turns become evaluation cases via evals/from_feedback.py.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"request_id\": \"{{lastRequestId}}\",\n  \"rating\": \"down\",\n  \"reason\": \"too generic, I wanted the actual line to change\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "200 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/feedback",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "feedback"
+              ]
+            },
+            "description": "`reason` is the valuable half: a rate says something is wrong, a reason says what. These turns become evaluation cases via evals/from_feedback.py.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"request_id\": \"{{lastRequestId}}\",\n  \"rating\": \"down\",\n  \"reason\": \"too generic, I wanted the actual line to change\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "200",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"recorded\": true,\n  \"request_id\": \"7c1aea74-d1ef-4104-9bee-9bd48139c455\",\n  \"rating\": \"down\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "23. Feedback - unknown request_id (404)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 404\", () => pm.response.to.have.status(404));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/feedback",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "feedback"
+          ]
+        },
+        "description": "A rating must point at a turn that happened.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"request_id\": \"00000000-0000-0000-0000-000000000000\",\n  \"rating\": \"down\",\n  \"reason\": \"too generic, I wanted the actual line to change\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "404 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/feedback",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "feedback"
+              ]
+            },
+            "description": "A rating must point at a turn that happened.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"request_id\": \"00000000-0000-0000-0000-000000000000\",\n  \"rating\": \"down\",\n  \"reason\": \"too generic, I wanted the actual line to change\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "404",
+          "code": 404,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"detail\": \"request_id not found\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "24. Feedback - rating must be up or down (422)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 422\", () => pm.response.to.have.status(422));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/feedback",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "feedback"
+          ]
+        },
+        "description": "No third option.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"request_id\": \"{{lastRequestId}}\",\n  \"rating\": \"maybe\",\n  \"reason\": null\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [
+        {
+          "name": "422 - captured from the live service",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/feedback",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "feedback"
+              ]
+            },
+            "description": "No third option.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"request_id\": \"{{lastRequestId}}\",\n  \"rating\": \"maybe\",\n  \"reason\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "status": "422",
+          "code": 422,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"detail\": \"`rating` must be 'up' or 'down'.\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "25. Flagged - the queue that feeds the eval set",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"shape\", () => pm.expect(pm.response.json()).to.have.property(\"flagged\"));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/flagged?brand_id={{brandId}}&limit=5",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "flagged"
+          ],
+          "query": [
+            {
+              "key": "brand_id",
+              "value": "bee79bff-d5f6-4220-a7d4-7a04bf173e59"
+            },
+            {
+              "key": "limit",
+              "value": "5"
+            }
+          ]
+        },
+        "description": "Turns users marked down, newest first, with their own words."
+      },
+      "response": [
+        {
+          "name": "200 - captured from the live service",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/flagged?brand_id={{brandId}}&limit=5",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "flagged"
+              ],
+              "query": [
+                {
+                  "key": "brand_id",
+                  "value": "bee79bff-d5f6-4220-a7d4-7a04bf173e59"
+                },
+                {
+                  "key": "limit",
+                  "value": "5"
+                }
+              ]
+            },
+            "description": "Turns users marked down, newest first, with their own words."
+          },
+          "status": "200",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\",\n  \"count\": 2,\n  \"flagged\": [\n    {\n      \"_id\": \"7c1aea74-d1ef-4104-9bee-9bd48139c455\",\n      \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\",\n      \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n      \"created_at\": \"2026-09-25T09:23:43Z\",\n      \"intent\": \"improve\",\n      \"routed_by\": \"matched\",\n      \"brand_brain_tier\": \"A\",\n      \"grounded\": true,\n      \"fallback\": false,\n      \"fallback_reason\": null,\n      \"confidence\": \"high\",\n      \"latency_ms\": 3859,\n      \"feedback\": {\n        \"rating\": \"down\",\n        \"reason\": \"too generic, I wanted the actual line to change\",\n        \"user_id\": \"postman-user\",\n        \"at\": \"2026-09-25T09:23:44+00:00\"\n      }\n    },\n    {\n      \"_id\": \"33355e16-c057-4a5a-a88d-184b5a55612f\",\n      \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\",\n      \"test_id\": \"05cc1f26-3527-48b4-99bc-c748963d44ab\",\n      \"created_at\": \"2026-09-25T05:11:41Z\",\n      \"intent\": \"prioritize\",\n      \"routed_by\": \"supplied\",\n      \"brand_brain_tier\": \"A\",\n      \"grounded\": true,\n      \"fallback\": false,\n      \"fallback_reason\": null,\n      \"confidence\": \"high\",\n      \"latency_ms\": 2625,\n      \"feedback\": {\n        \"rating\": \"down\",\n        \"reason\": \"too generic, I wanted the actual line to change\",\n        \"user_id\": \"u_88\",\n        \"at\": \"2026-09-25T05:11:51+00:00\"\n      }\n    }\n  ]\n}"
+        }
+      ]
+    },
+    {
+      "name": "26. Usage - tokens, spend, health and alerts",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+              "const u = pm.response.json();",
+              "pm.test(\"health travels with the bill\", () => {",
+              "  pm.expect(u.totals).to.have.property(\"cost_usd\");",
+              "  pm.expect(u.health).to.have.property(\"fallback_rate\");",
+              "  pm.expect(u.health).to.have.property(\"ungrounded_rate\");",
+              "  pm.expect([\"ok\",\"warn\",\"alert\"]).to.include(u.status);",
+              "});",
+              "pm.test(\"routing and tier breakdowns are present\", () => {",
+              "  pm.expect(u).to.have.property(\"per_route\");",
+              "  pm.expect(u).to.have.property(\"per_brand_brain_tier\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/usage?brand_id={{brandId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "usage"
+          ],
+          "query": [
+            {
+              "key": "brand_id",
+              "value": "bee79bff-d5f6-4220-a7d4-7a04bf173e59"
+            }
+          ]
+        },
+        "description": "The bill AND the operational view. `status` is ok|warn|alert; `alerts` names the signal, its threshold and why it matters. Nothing fires below 20 turns."
+      },
+      "response": [
+        {
+          "name": "200 - captured from the live service",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/usage?brand_id={{brandId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "usage"
+              ],
+              "query": [
+                {
+                  "key": "brand_id",
+                  "value": "bee79bff-d5f6-4220-a7d4-7a04bf173e59"
+                }
+              ]
+            },
+            "description": "The bill AND the operational view. `status` is ok|warn|alert; `alerts` names the signal, its threshold and why it matters. Nothing fires below 20 turns."
+          },
+          "status": "200",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"brand_id\": \"bee79bff-d5f6-4220-a7d4-7a04bf173e59\",\n  \"from\": \"2026-08-27\",\n  \"to\": \"2026-09-25\",\n  \"totals\": {\n    \"input_tokens\": 36622,\n    \"output_tokens\": 2863,\n    \"thinking_tokens\": 1622,\n    \"cached_tokens\": 0,\n    \"total_tokens\": 41107,\n    \"turns\": 12,\n    \"llm_calls\": 12,\n    \"fallbacks\": 1,\n    \"ungrounded\": 0,\n    \"cost_usd\": 0.044285,\n    \"cost_inr\": 3.8972\n  },\n  \"health\": {\n    \"turns\": 12,\n    \"fallback_rate\": 0.0833,\n    \"ungrounded_rate\": 0.0,\n    \"latency_p50_ms\": 2813,\n    \"latency_p95_ms\": 17078,\n    \"thumbs_down_rate\": 1.0,\n    \"model_routed_rate\": 0.0\n  },\n  \"status\": \"ok\",\n  \"alerts\": [],\n  \"feedback\": {\n    \"up\": 0,\n    \"down\": 2,\n    \"rated\": 2,\n    \"unrated\": 10,\n    \"down_reasons\": [\n      {\n        \"request_id\": \"33355e16-c057-4a5a-a88d-184b5a55612f\",\n        \"intent\": \"prioritize\",\n        \"reason\": \"too generic, I wanted the actual line to change\"\n      },\n      {\n        \"request_id\": \"7c1aea74-d1ef-4104-9bee-9bd48139c455\",\n        \"intent\": \"improve\",\n        \"reason\": \"too generic, I wanted the actual line to change\"\n      }\n    ]\n  },\n  \"fallback_reasons\": {\n    \"bad_json\": 1\n  },\n  \"per_day\": {\n    \"2026-09-24\": {\n      \"input_tokens\": 7301,\n      \"output_tokens\": 399,\n      \"thinking_tokens\": 1622,\n      \"cached_tokens\": 0,\n      \"total_tokens\": 9322,\n      \"turns\": 2,\n      \"llm_calls\": 2,\n      \"fallbacks\": 1,\n      \"ungrounded\": 0,\n      \"cost_usd\": 0.013055,\n      \"cost_inr\": 1.1489\n    },\n    \"2026-09-25\": {\n      \"input_tokens\": 29321,\n      \"output_tokens\": 2464,\n      \"thinking_tokens\": 0,\n      \"cached_tokens\": 0,\n      \"total_tokens\": 31785,\n      \"turns\": 10,\n      \"llm_calls\": 10,\n      \"fallbacks\": 0,\n      \"ungrounded\": 0,\n      \"cost_usd\": 0.03123,\n      \"cost_inr\": 2.7483\n    }\n  },\n  \"per_intent\": {\n    \"compare\": {\n      \"input_tokens\": 3530,\n      \"output_tokens\": 344,\n      \"thinking_tokens\": 0,\n      \"cached_tokens\": 0,\n      \"total_tokens\": 3874,\n      \"turns\": 1,\n      \"llm_calls\": 1,\n      \"fallbacks\": 0,\n      \"ungrounded\": 0,\n      \"cost_usd\": 0.003938,\n      \"cost_inr\": 0.3465\n    },\n    \"explain\": {\n      \"input_tokens\": 10117,\n      \"output_tokens\": 734,\n      \"thinking_tokens\": 1622,\n      \"cached_tokens\": 0,\n      \"total_tokens\": 12473,\n      \"turns\": 3,\n      \"llm_calls\": 3,\n      \"fallbacks\": 1,\n      \"ungrounded\": 0,\n      \"cost_usd\": 0.016423,\n      \"cost_inr\": 1.4453\n    },\n    \"improve\": {\n      \"input_tokens\": 3303,\n      \"output_tokens\": 287,\n      \"thinking_tokens\": 0,\n      \"cached_tokens\": 0,\n      \"total_tokens\": 3590,\n      \"turns\": 1,\n      \"llm_calls\": 1,\n      \"fallbacks\": 0,\n      \"ungrounded\": 0,\n      \"cost_usd\": 0.003553,\n      \"cost_inr\": 0.3127\n    },\n    \"out_of_scope\": {\n      \"input_tokens\": 2805,\n      \"output_tokens\": 115,\n      \"thinking_tokens\": 0,\n      \"cached_tokens\": 0,\n      \"total_tokens\": 2920,\n      \"turns\": 1,\n      \"llm_calls\": 1,\n      \"fallbacks\": 0,\n      \"ungrounded\": 0,\n      \"cost_usd\": 0.002535,\n      \"cost_inr\": 0.2231\n    },\n    \"performance\": {\n      \"input_tokens\": 7974,\n      \"output_tokens\": 810,\n      \"thinking_tokens\": 0,\n      \"cached_tokens\": 0,\n      \"total_tokens\": 8784,\n      \"turns\": 3,\n      \"llm_calls\": 3,\n      \"fallbacks\": 0,\n      \"ungrounded\": 0,\n      \"cost_usd\": 0.009018,\n      \"cost_inr\": 0.7936\n    },\n    \"prioritize\": {\n      \"input_tokens\": 5593,\n      \"output_tokens\": 417,\n      \"thinking_tokens\": 0,\n      \"cached_tokens\": 0,\n      \"total_tokens\": 6010,\n      \"turns\": 2,\n      \"llm_calls\": 2,\n      \"fallbacks\": 0,\n      \"ungrounded\": 0,\n      \"cost_usd\": 0.005758,\n      \"cost_inr\": 0.5067\n    },\n    \"rewrite\": {\n      \"input_tokens\": 3300,\n      \"output_tokens\": 156,\n      \"thinking_tokens\": 0,\n      \"cached_tokens\": 0,\n      \"total_tokens\": 3456,\n      \"turns\": 1,\n      \"llm_calls\": 1,\n      \"fallbacks\": 0,\n      \"ungrounded\": 0,\n      \"cost_usd\": 0.00306,\n      \"cost_inr\": 0.2693\n    }\n  },\n  \"per_model\": {\n    \"gemini-flash-latest\": {\n      \"input_tokens\": 31728,\n      \"output_tokens\": 2714,\n      \"thinking_tokens\": 0,\n      \"cached_tokens\": 0,\n      \"total_tokens\": 34442,\n      \"turns\": 11,\n      \"llm_calls\": 11,\n      \"fallbacks\": 0,\n      \"ungrounded\": 0,\n      \"cost_usd\": 0.033973,\n      \"cost_inr\": 2.9897\n    },\n    \"none\": {\n      \"input_tokens\": 4894,\n      \"output_tokens\": 149,\n      \"thinking_tokens\": 1622,\n      \"cached_tokens\": 0,\n      \"total_tokens\": 6665,\n      \"turns\": 1,\n      \"llm_calls\": 1,\n      \"fallbacks\": 1,\n      \"ungrounded\": 0,\n      \"cost_usd\": 0.010312,\n      \"cost_inr\": 0.9075\n    }\n  },\n  \"per_route\": {\n    \"matched\": {\n      \"input_tokens\": 11049,\n      \"output_tokens\": 841,\n      \"thinking_tokens\": 0,\n      \"cached_tokens\": 0,\n      \"total_tokens\": 11890,\n      \"turns\": 4,\n      \"llm_calls\": 4,\n      \"fallbacks\": 0,\n      \"ungrounded\": 0,\n      \"cost_usd\": 0.01144,\n      \"cost_inr\": 1.0068\n    },\n    \"supplied\": {\n      \"input_tokens\": 25573,\n      \"output_tokens\": 2022,\n      \"thinking_tokens\": 1622,\n      \"cached_tokens\": 0,\n      \"total_tokens\": 29217,\n      \"turns\": 8,\n      \"llm_calls\": 8,\n      \"fallbacks\": 1,\n      \"ungrounded\": 0,\n      \"cost_usd\": 0.032845,\n      \"cost_inr\": 2.8904\n    }\n  },\n  \"per_brand_brain_tier\": {\n    \"A\": {\n      \"input_tokens\": 36622,\n      \"output_tokens\": 2863,\n      \"thinking_tokens\": 1622,\n      \"cached_tokens\": 0,\n      \"total_tokens\": 41107,\n      \"turns\": 12,\n      \"llm_calls\": 12,\n      \"fallbacks\": 1,\n      \"ungrounded\": 0,\n      \"cost_usd\": 0.044285,\n      \"cost_inr\": 3.8972\n    }\n  },\n  \"notes\": [\n    \"fx_fixed_rate\",\n    \"gemini_alias_unconfirmed\"\n  ]\n}"
+        }
+      ]
+    },
+    {
+      "name": "27. Usage - backwards range is refused (422)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"status is 422\", () => pm.response.to.have.status(422));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "{{userRole}}"
+          },
+          {
+            "key": "X-User-Permissions",
+            "value": "{{userPermissions}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/script-lab/coach/usage?brand_id={{brandId}}&from=2026-09-30&to=2026-09-01",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "script-lab",
+            "coach",
+            "usage"
+          ],
+          "query": [
+            {
+              "key": "brand_id",
+              "value": "bee79bff-d5f6-4220-a7d4-7a04bf173e59"
+            },
+            {
+              "key": "from",
+              "value": "2026-09-30"
+            },
+            {
+              "key": "to",
+              "value": "2026-09-01"
+            }
+          ]
+        },
+        "description": "`from` must be on or before `to`."
+      },
+      "response": [
+        {
+          "name": "422 - captured from the live service",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{userRole}}"
+              },
+              {
+                "key": "X-User-Permissions",
+                "value": "{{userPermissions}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/script-lab/coach/usage?brand_id={{brandId}}&from=2026-09-30&to=2026-09-01",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "script-lab",
+                "coach",
+                "usage"
+              ],
+              "query": [
+                {
+                  "key": "brand_id",
+                  "value": "bee79bff-d5f6-4220-a7d4-7a04bf173e59"
+                },
+                {
+                  "key": "from",
+                  "value": "2026-09-30"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-09-01"
+                }
+              ]
+            },
+            "description": "`from` must be on or before `to`."
+          },
+          "status": "422",
+          "code": 422,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"detail\": \"`from` must be on or before `to`.\"\n}"
+        }
+      ]
+    }
+  ]
+}

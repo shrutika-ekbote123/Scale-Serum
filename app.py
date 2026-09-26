@@ -92,12 +92,17 @@ if MONGODB_URI:
     # record per generation run - see ai_briefings/store.py.
     ai_briefings_collection = mongo_client[MONGODB_DB]["ai_briefings"]
     ai_briefing_runs = mongo_client[MONGODB_DB]["ai_briefing_runs"]
+    # Creative Coach: counters only - one document per coach turn, holding what
+    # it cost and how it went. The conversation itself lives in scrumdb's
+    # coach_thread, written by the main backend. See script_lab_coach/usage.py.
+    script_lab_coach_usage = mongo_client[MONGODB_DB]["script_lab_coach_usage"]
 else:
     mongo_client = None
     ai_suggested_next_actions = None
     ai_suggested_next_action_tiers = None
     ai_briefings_collection = None
     ai_briefing_runs = None
+    script_lab_coach_usage = None
     brand_brains = None
     sales_call_analyses = None
     sales_call_transcripts_raw = None
@@ -339,6 +344,34 @@ if AI_BRIEFINGS_AVAILABLE and ai_briefings_collection is not None:
     ai_briefing_store = _ab.BriefingStore(ai_briefings_collection, ai_briefing_runs)
 
 
+# ---------------------------------------------------------------------------
+# Creative Coach (Script Lab)
+#
+# The chat beside the Script Lab score card. Stateless: the conversation is
+# passed in and the new turn handed back, because the thread lives in scrumdb's
+# sl_script_lab_tests.coach_thread, which the main backend owns. This service
+# reads scrumdb READ-ONLY and writes only a per-turn usage counter to Mongo.
+# ---------------------------------------------------------------------------
+SCRIPT_LAB_COACH_AVAILABLE = True
+try:
+    import script_lab_coach as _slc
+    from script_lab_coach import service as _slc_service
+    from script_lab_coach import usage as _slc_usage
+except Exception as _slc_import_error:  # pragma: no cover - import-time only
+    SCRIPT_LAB_COACH_AVAILABLE = False
+    _SLC_IMPORT_ERROR = repr(_slc_import_error)
+    print(f"WARNING: script_lab_coach unavailable - {_SLC_IMPORT_ERROR}")
+
+script_lab_coach_store = None
+_slc_builder = None
+if SCRIPT_LAB_COACH_AVAILABLE:
+    if script_lab_coach_usage is not None:
+        script_lab_coach_store = _slc_usage.UsageStore(script_lab_coach_usage)
+    _slc_builder = _slc.CreativeCoachContextBuilder(
+        run_sync=run_in_threadpool,
+        load_brand_brain=_slc.brand_brain_loader(brand_brains))
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Startup: make sure the analysis indexes exist. Shutdown: close the shared
@@ -347,6 +380,11 @@ async def lifespan(_app: FastAPI):
         await sales_call_store.ensure_indexes()
     if vision_lab_store is not None:
         await vision_lab_store.ensure_indexes()
+    # The coach's usage indexes are created lazily, on its first write, NOT
+    # here: opening a Mongo connection during startup binds the driver to
+    # whichever event loop constructed the app, and every TestClient built after
+    # the first then fails with "Event loop is closed". Ten sales-call billing
+    # tests started erroring the moment this ran on boot.
     yield
     if SALES_CALL_ANALYZER_AVAILABLE:
         await _sca_deepgram.aclose()
@@ -2861,6 +2899,262 @@ async def ai_briefings_usage(
         except Exception:  # noqa: BLE001 - a bad pricing file must not fail the report
             pricing = None
     return _ab.summarize_usage(docs, brand_id=brand_id, start=start, end=end, pricing=pricing)
+
+
+# ---------------------------------------------------------------------------
+# Creative Coach (Script Lab): the chat beside the score card
+#
+# STATELESS. The caller sends the existing coach_thread and appends the turn
+# this returns. Nothing is stored here but a usage counter.
+#
+# NEVER 5xx THE PANEL. A model outage, a database timeout or an answer that
+# fails the grounding gate all return 200 with `fallback` or `grounded` set, and
+# text the user can still act on. Only the refusals below are errors.
+# ---------------------------------------------------------------------------
+SLC_TAG = "Script Lab Creative Coach"
+SLC_PAGE_PERMISSION = "script_lab"
+
+
+class CoachSession(BaseModel):
+    user_id: Optional[str] = None
+    brand_id: Optional[str] = None
+    request_id: Optional[str] = None
+
+
+class CoachTurn(BaseModel):
+    """One stored turn. `role` and `text` are what matter; anything else the
+    backend has stored on the turn is carried through untouched."""
+    role: str = "user"
+    text: str = ""
+    intent: Optional[str] = None
+
+    model_config = {"extra": "allow"}
+
+
+class CoachChatRequest(BaseModel):
+    test_id: str
+    message: str = Field(..., description="The user's question. 1-1000 characters.")
+    intent: Optional[str] = Field(
+        None, description="Send the chip's intent to skip classification. Null for free text.")
+    thread: List[CoachTurn] = Field(
+        default_factory=list, description="The existing coach_thread. Last 12 turns are used.")
+    session: CoachSession = Field(default_factory=CoachSession)
+
+
+def _require_coach():
+    if not SCRIPT_LAB_COACH_AVAILABLE:
+        raise HTTPException(status_code=503,
+                            detail="The Creative Coach is not available on this server.")
+
+
+def _slc_viewer(role: Optional[str], permissions: Optional[str]) -> None:
+    """The page permission. A call with no viewer headers is a trusted service
+    call, exactly as in AI Briefings."""
+    if role is None and permissions is None:
+        return
+    if (role or "").strip().lower() == "superadmin":
+        return
+    granted = {p.strip() for p in (permissions or "").split(",") if p.strip()}
+    if SLC_PAGE_PERMISSION not in granted:
+        raise HTTPException(status_code=403, detail=(
+            f"This user's role does not include the '{SLC_PAGE_PERMISSION}' permission."))
+
+
+def _slc_deps():
+    return _slc_service.CoachDeps(
+        builder=_slc_builder,
+        llm_client=client,
+        llm_model=GEMINI_MODEL,
+        price_usage=_ab_loaders.usage_pricer(GEMINI_MODEL) if AI_BRIEFINGS_AVAILABLE else None,
+        usage_store=script_lab_coach_store,
+    )
+
+
+async def _slc_guarded(call):
+    """Turn the context layer's refusals into HTTP. Everything else is handled
+    inside the service and comes back as a usable turn."""
+    try:
+        return await call
+    except _slc.TestNotFound:
+        raise HTTPException(status_code=404, detail="test_id not found")
+    except _slc.BrandMismatch:
+        raise HTTPException(status_code=403, detail="This test belongs to a different brand.")
+    except _slc_service.ThreadTooLong:
+        raise HTTPException(status_code=409, detail="thread_limit")
+    except _slc.DataUnavailable:
+        raise HTTPException(status_code=503, detail="The script test could not be read.")
+
+
+@app.get("/api/script-lab/coach/starters", tags=[SLC_TAG],
+         summary="The opening turn and the three chips (no AI call)",
+         dependencies=[Depends(require_api_key)])
+async def script_lab_coach_starters(
+    test_id: str = Query(..., description="A row in sl_script_lab_tests"),
+    brand_id: Optional[str] = Query(None, description="Checked against the test's brand"),
+    x_user_role: Optional[str] = Header(None),
+    x_user_permissions: Optional[str] = Header(None),
+):
+    """Computed from the stored review, so it is instant and costs nothing.
+
+    `capabilities` says what is answerable for this test: whether the ad has
+    delivery data, whether an earlier version exists to compare against, and
+    whether there is enough Brand Brain to judge brand fit. Hide the chips it
+    says no to."""
+    _require_coach()
+    _slc_viewer(x_user_role, x_user_permissions)
+    return await _slc_guarded(
+        _slc_service.starters(_slc_deps(), test_id=test_id, brand_id=brand_id))
+
+
+@app.post("/api/script-lab/coach/chat", tags=[SLC_TAG],
+          summary="Ask the coach one question about one tested script",
+          dependencies=[Depends(require_api_key)])
+async def script_lab_coach_chat(
+    body: CoachChatRequest,
+    x_user_id: Optional[str] = Header(None),
+    x_user_role: Optional[str] = Header(None),
+    x_user_permissions: Optional[str] = Header(None),
+):
+    """Returns ONE coach turn: a superset of the {role, text, intent} already
+    stored in `coach_thread`. Append it there, with the user's own turn.
+
+    Read three flags before trusting a turn. `fallback` means no AI answer was
+    produced and this is the deterministic stand-in. `grounded: false` means an
+    AI answer WAS produced and rejected for citing a figure nothing supports.
+    `confidence: low` means the answer rests on thin, stale or missing data.
+
+    `facts_used` is every figure the answer was permitted to contain, and
+    `evidence` is the provenance of anything drawn from outside the score card.
+    """
+    _require_coach()
+    _slc_viewer(x_user_role, x_user_permissions)
+    message = (body.message or "").strip()
+    if not message or len(message) > _slc_service.MAX_QUESTION:
+        raise HTTPException(status_code=422, detail=(
+            f"`message` must be 1 to {_slc_service.MAX_QUESTION} characters."))
+    if body.intent and body.intent not in _slc.INTENT_NAMES:
+        raise HTTPException(status_code=422, detail=(
+            "`intent` must be one of: " + ", ".join(_slc.INTENT_NAMES) + "."))
+
+    return await _slc_guarded(_slc_service.chat(
+        _slc_deps(),
+        test_id=body.test_id,
+        message=message,
+        intent=body.intent,
+        thread=[t.model_dump() for t in body.thread],
+        brand_id=body.session.brand_id,
+        user_id=x_user_id or body.session.user_id,
+        request_id=body.session.request_id,
+    ))
+
+
+class CoachFeedbackRequest(BaseModel):
+    """A thumb on one coach turn."""
+    request_id: str = Field(..., description="`request_id` from the turn being rated")
+    rating: str = Field(..., description="up | down")
+    reason: Optional[str] = Field(None, description="Why, in the user's words. "
+                                                    "Optional, and the most useful field here.")
+
+
+@app.post("/api/script-lab/coach/feedback", tags=[SLC_TAG],
+          summary="Rate one coach turn (the thumbs on the bubble)",
+          dependencies=[Depends(require_api_key)])
+async def script_lab_coach_feedback(
+    body: CoachFeedbackRequest,
+    x_user_id: Optional[str] = Header(None),
+    x_user_role: Optional[str] = Header(None),
+    x_user_permissions: Optional[str] = Header(None),
+):
+    """Records a thumbs up or down against the turn's `request_id`.
+
+    The rating lands on that turn's own counter row, beside the intent, the
+    Brand Brain tier and the latency that produced it - which is what lets a
+    thumbs-down later become an evaluation case without a join, and what makes
+    `thumbs_down_rate` in the usage report mean something.
+
+    `reason` is free text and is the most valuable field: a rate tells you
+    something is wrong, a reason tells you what.
+    """
+    _require_coach()
+    _slc_viewer(x_user_role, x_user_permissions)
+    if script_lab_coach_store is None:
+        raise HTTPException(status_code=503, detail=(
+            "Coach feedback is not recorded. Set MONGODB_URI in the environment."))
+    rating = (body.rating or "").strip().lower()
+    if rating not in ("up", "down"):
+        raise HTTPException(status_code=422, detail="`rating` must be 'up' or 'down'.")
+    recorded = await script_lab_coach_store.record_feedback(
+        body.request_id, rating=rating, reason=body.reason, user_id=x_user_id)
+    if not recorded:
+        raise HTTPException(status_code=404, detail="request_id not found")
+    return {"recorded": True, "request_id": body.request_id, "rating": rating}
+
+
+@app.get("/api/script-lab/coach/flagged", tags=[SLC_TAG],
+         summary="Turns users marked down, newest first",
+         dependencies=[Depends(require_api_key)])
+async def script_lab_coach_flagged(
+    brand_id: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """The queue that feeds the evaluation set.
+
+    Each row carries the turn's question shape - intent, tier, fallback reason -
+    and the user's own words. `python -m evals.from_feedback` turns them into
+    candidate cases, which is how real complaints become permanent tests.
+    """
+    _require_coach()
+    if script_lab_coach_store is None:
+        raise HTTPException(status_code=503, detail=(
+            "Coach feedback is not recorded. Set MONGODB_URI in the environment."))
+    if brand_id:
+        _require_uuid(brand_id, "brand_id")
+    rows = await script_lab_coach_store.flagged(brand_id, limit)
+    return {"brand_id": brand_id, "count": len(rows), "flagged": [
+        {k: r.get(k) for k in ("_id", "brand_id", "test_id", "created_at", "intent",
+                               "routed_by", "brand_brain_tier", "grounded", "fallback",
+                               "fallback_reason", "confidence", "latency_ms", "feedback")}
+        for r in rows]}
+
+
+@app.get("/api/script-lab/coach/usage", tags=[SLC_TAG],
+         summary="Tokens, estimated spend and coach health over a date range",
+         dependencies=[Depends(require_api_key)])
+async def script_lab_coach_usage(
+    brand_id: str = Query(...),
+    from_: Optional[str] = Query(None, alias="from",
+                                 description="First day, inclusive (YYYY-MM-DD). "
+                                             "Defaults to 29 days before `to`."),
+    to: Optional[str] = Query(None, description="Last day, inclusive. Defaults to today."),
+):
+    """What the coach cost, and how it behaved while spending it.
+
+    `health` travels with the bill on purpose: a month that got cheaper because
+    half its turns fell back to the template is not a saving, and a report that
+    hides that is a misleading one. Costs are priced at the rates in force when
+    each turn ran, so changing pricing.json never rewrites an old bill.
+
+    `status` is `ok`, `warn` or `alert`, and `alerts` says which signal crossed
+    which threshold and why it matters. Nothing fires below 20 turns: a quiet
+    day with one fallback is not a 100% fallback rate, and an alert that cries
+    wolf is an alert people mute.
+
+    `per_route` shows how traffic is being classified - `matched` and `supplied`
+    cost nothing, `model` costs a call - and `per_brand_brain_tier` shows how
+    much of your coaching is running without a complete Brand Brain.
+    """
+    _require_coach()
+    if script_lab_coach_store is None:
+        raise HTTPException(status_code=503, detail=(
+            "Coach usage is not recorded. Set MONGODB_URI in the environment."))
+    _require_uuid(brand_id, "brand_id")
+    end = _ab_date(to, "to") or date.today().isoformat()
+    start = _ab_date(from_, "from") or (
+        date.fromisoformat(end) - timedelta(days=29)).isoformat()
+    if start > end:
+        raise HTTPException(status_code=422, detail="`from` must be on or before `to`.")
+    docs = await script_lab_coach_store.between(brand_id, start, end)
+    return _slc_usage.summarize(docs, brand_id=brand_id, start=start, end=end)
 
 
 if __name__ == "__main__":

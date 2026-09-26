@@ -1,0 +1,195 @@
+{
+ "name": "di_never_published",
+ "test": {
+  "test_id": "7f5572ba-e202-4c10-9d44-4c346fdec89c",
+  "brand_id": "bee79bff-d5f6-4220-a7d4-7a04bf173e59",
+  "ad_number": 2,
+  "version": 1,
+  "label": "v1",
+  "ad_name": "From Manager to Leader — The Career Accelerator Path",
+  "source_ad_id": null,
+  "source_platform": null,
+  "funnel_stage": "cold",
+  "marketing_angle": "original",
+  "script_text": "Frame-to-camera open in the first 3s with a strong pattern-interrupt hook ('You sat in every meeting except the one that matters') — thumbstop in the top 12%. On-screen captions throughout. Problem -> aspiration -> proof arc, with social proof at 0:23 ('1,200+ leaders trust this'). Single clear CTA at 0:48, well-timed.",
+  "score": 81,
+  "attention": 89,
+  "resonance": 81,
+  "creative": 71,
+  "conversion": 80,
+  "marketing_angle_execution": null,
+  "verdict": "ready",
+  "verdict_band": null,
+  "ai_verdict": null,
+  "emotional_angle": {},
+  "context_alignment": {},
+  "section_breakdown": [],
+  "improvements": [],
+  "what_worked": [
+   "Strong hook / pattern-interrupt",
+   "Frame-to-camera open",
+   "On-screen captions",
+   "Social proof",
+   "Problem → aspiration → proof arc",
+   "Single clear CTA",
+   "Well-timed pacing"
+  ],
+  "what_to_fix": [
+   "Close with a branded end-card / logo so the brand sticks after the scroll."
+  ],
+  "top_recommendation": "Scale-ready — strongest dimension is attention (89). Ship it and scale budget +30% once it clears the learning phase.",
+  "ai_fallback": false,
+  "created_by_user_id": "d946255a-e0c4-4b55-8fc7-ad35b0fd327d",
+  "created_at": "2026-06-30T09:47:35.666000+00:00"
+ },
+ "brand": {
+  "id": "bee79bff-d5f6-4220-a7d4-7a04bf173e59",
+  "name": "DI",
+  "timezone": "UTC",
+  "currency": "INR",
+  "brand_brain_id": "c6f11180b27247c6a3474ce8e5e2f7f6"
+ },
+ "brand_brain": {
+  "answers": {
+   "businessType": "SaaS / Software",
+   "idealCustomer": "They are project lawyers and legal professionals burdened by the exhausting, time-intensive nature of manual document drafting. Balancing heavy caseloads with the demand for meticulous precision leaves them overwhelmed by repetitive, low-leverage administrative tasks. Their primary objective is a reliable, streamlined workflow that accelerates draft creation without compromising on legal quality or compliance standards. They decide to purchase when they encounter a dependable solution that demonstrably reduces manual drafting effort and protects their valuable billable hours.",
+   "brandVoice": "Professional / Authoritative",
+   "language": "English only",
+   "trafficChannels": [
+    "Google Search",
+    "Meta (Facebook + Instagram)"
+   ],
+   "salesCycle": "3+ months",
+   "competitors": [
+    "sa HQ",
+    "ada Collective",
+    "dss Collective"
+   ],
+   "marketingGoal": "More leads (volume)",
+   "journey": "Legal professionals, overwhelmed by practice demands, first discover Lawtorney through Google Search while seeking solutions for operational efficiency and client acquisition. They then engage with Lawtorney's valuable website content, learning about expert guidance and proven strategies. Interested individuals provide their contact information, becoming a lead, and subsequently participate in a discovery call to discuss their specific challenges and explore tailored solutions. Upon conversion, these leads become clients, onboarding into Lawtorney's coaching or consulting services, where they receive ongoing support and guidance to implement strategies for a more profitable and balanced legal career."
+  },
+  "context": {
+   "industry": "Law",
+   "brandName": "DI",
+   "website": "https://app.scaleserum.com",
+   "audienceShort": "cxo,gho",
+   "adBudget": "234567"
+  },
+  "brand_brain_id": "c6f11180b27247c6a3474ce8e5e2f7f6",
+  "brand_name": "DI"
+ },
+ "performance": null,
+ "creatives": {
+  "winners": [
+   {
+    "ad_id": "1553221426",
+    "ad_name": "WP-launch-video-3min-IN",
+    "score": 86.0,
+    "verdict": "scale",
+    "format": "video",
+    "hook_analysis": "Strong opener — CTR 14.0% puts thumbstop in the top tier for this account.",
+    "script_copy": "Lead-gen copy; optimise the form/offer step to lift click→lead.",
+    "analyzed_at": "2026-09-24T07:50:36.966000+00:00"
+   },
+   {
+    "ad_id": "120251070761160057",
+    "ad_name": "1410 - PGLI_ Dubai Dream Career+Pain point angle_Actorsname_Cold_Square",
+    "score": 86.0,
+    "verdict": "scale",
+    "format": null,
+    "hook_analysis": "Strong opener — CTR 6.1% puts thumbstop in the top tier for this account.",
+    "script_copy": "Lead-gen copy; optimise the form/offer step to lift click→lead.",
+    "analyzed_at": "2026-09-17T07:33:31.513000+00:00"
+   },
+   {
+    "ad_id": "120253441492710670",
+    "ad_name": "Caroursel1",
+    "score": 86.0,
+    "verdict": "scale",
+    "format": null,
+    "hook_analysis": "Strong opener — CTR 4.9% puts thumbstop in the top tier for this account.",
+    "script_copy": "Lead-gen copy; optimise the form/offer step to lift click→lead.",
+    "analyzed_at": "2026-09-17T07:33:31.498000+00:00"
+   }
+  ],
+  "losers": [
+   {
+    "ad_id": "52518618882012",
+    "ad_name": "12june_camp_shraddha",
+    "score": 17.0,
+    "verdict": "pause",
+    "format": null,
+    "hook_analysis": "Weak hook — CTR 0.0% suggests the opening 3s are not stopping the scroll. Test a new pattern-interrupt.",
+    "script_copy": "Lead-gen copy; optimise the form/offer step to lift click→lead.",
+    "analyzed_at": "2026-07-02T07:20:55.950000+00:00"
+   },
+   {
+    "ad_id": "6940139076492",
+    "ad_name": "2may_mena_webinar_nurturing2",
+    "score": 17.0,
+    "verdict": "pause",
+    "format": null,
+    "hook_analysis": "Weak hook — CTR 0.0% suggests the opening 3s are not stopping the scroll. Test a new pattern-interrupt.",
+    "script_copy": "Lead-gen copy; optimise the form/offer step to lift click→lead.",
+    "analyzed_at": "2026-06-30T04:17:16.593000+00:00"
+   }
+  ]
+ },
+ "competitors": [
+  {
+   "ad_archive_id": "992070833180585",
+   "hook": "🌟 Do You Aspire to Lead Fortune 500 Companies? Join the Ranks of Global Board Directors Valued in 50+ Nations\n\nAchieve Boardroom Excellence with our Top 3 Strategies for Non-executive and International Corporate Directors. Our program isn't just training—it's your entry into the world of influential leadership.\n\nThis isn't just a title; it's an exclusive club. Gain the skills and recognition needed to join the ranks of the world's most respected board members and Corporate Directors.\n\nExclusive Benefits for Attendees:\n✅ Earn a globally recognized qualification, enhancing your credibility.\n✅ Master the skills to contribute meaningfully to International corporate governance.\n✅ Become a leader in Environmental, Social, and Governance (ESG) practices.\n✅Opportunity to upgrade to Doctorate.\n✅ Gain a valuable credential that strengthens your professional resilience.\n\nEmpower yourself with the knowledge and status to excel in boardrooms across the globe. Join our upcoming webinar and take the first step towards boardroom leadership. This program has empowered over 1,000 executives to join prestigious boards of listed companies in 50+ nations. Limited Seats Available for Webinar -\nRegister Today!",
+   "creative_type": "video",
+   "est_run_days": 134,
+   "status": "active"
+  },
+  {
+   "ad_archive_id": "1496666138675829",
+   "hook": "🌟 Do You Aspire to Lead Fortune 500 Companies? Join the Ranks of Global Board Directors Valued in 50+ Nations\n\nAchieve Boardroom Excellence with our Top 3 Strategies for Non-executive and International Corporate Directors. Our program isn't just training—it's your entry into the world of influential leadership.\n\nThis isn't just a title; it's an exclusive club. Gain the skills and recognition needed to join the ranks of the world's most respected board members and Corporate Directors.\n\nExclusive Benefits for Attendees:\n✅ Earn a globally recognized qualification, enhancing your credibility.\n✅ Master the skills to contribute meaningfully to International corporate governance.\n✅ Become a leader in Environmental, Social, and Governance (ESG) practices.\n✅Opportunity to upgrade to Doctorate.\n✅ Gain a valuable credential that strengthens your professional resilience.\n\nEmpower yourself with the knowledge and status to excel in boardrooms across the globe. Join our upcoming webinar and take the first step towards boardroom leadership. This program has empowered over 1,000 executives to join prestigious boards of listed companies in 50+ nations. Limited Seats Available for Webinar -\nRegister Today!",
+   "creative_type": "video",
+   "est_run_days": 119,
+   "status": "active"
+  },
+  {
+   "ad_archive_id": "1061283649587199",
+   "hook": "With rising demand and commission-based earnings now legally allowed in India, boardroom roles are quickly becoming among the most lucrative in the corporate world.\nBut these seats aren’t handed out—they go to those who are prepared.\n\nThat’s why Directors’ Institute’s globally recognized program trains professionals not just for qualifications—but for real boardroom readiness.\n\nHere’s what you’ll gain by joining:\n\n✅ Join 100s of professionals who landed directorships in record time.\n✅ Learn how to navigate cross-border governance challenges confidently.\n✅ Become an ESG-savvy leader—an increasingly vital boardroom asset.\n✅ Unmatched networking opportunities with forward-thinking professionals.\n\nIf you're ready to earn, influence, and lead—start where hundreds of directors did. Join our FREE 1-hour webinar, today!",
+   "creative_type": "video",
+   "est_run_days": 70,
+   "status": "active"
+  },
+  {
+   "ad_archive_id": "1636775907391777",
+   "hook": "🌟 Do You Aspire to Lead Fortune 500 Companies? Join the Ranks of Global Board Directors Valued in 50+ Nations\n\nAchieve Boardroom Excellence with our Top 3 Strategies for Non-executive and International Corporate Directors. Our program isn't just training—it's your entry into the world of influential leadership.\n\nThis isn't just a title; it's an exclusive club. Gain the skills and recognition needed to join the ranks of the world's most respected board members and Corporate Directors.\n\nExclusive Benefits for Attendees:\n✅ Earn a globally recognized qualification, enhancing your credibility.\n✅ Master the skills to contribute meaningfully to International corporate governance.\n✅ Become a leader in Environmental, Social, and Governance (ESG) practices.\n✅Opportunity to upgrade to Doctorate.\n✅ Gain a valuable credential that strengthens your professional resilience.\n\nEmpower yourself with the knowledge and status to excel in boardrooms across the globe. Join our upcoming webinar and take the first step towards boardroom leadership. This program has empowered over 1,000 executives to join prestigious boards of listed companies in 50+ nations. Limited Seats Available for Webinar -\nRegister Today!",
+   "creative_type": "video",
+   "est_run_days": 70,
+   "status": "active"
+  },
+  {
+   "ad_archive_id": "2284025518999314",
+   "hook": "{{product.brand}}",
+   "creative_type": "carousel",
+   "est_run_days": 55,
+   "status": "active"
+  }
+ ],
+ "versions": [],
+ "other_brands": [
+  "AIFE",
+  "Acme",
+  "BigData",
+  "Dimond",
+  "FitNation Mumbai",
+  "Google Ads",
+  "Kaizen CRM",
+  "Kaizen Tech Solutions",
+  "Lawttorney",
+  "Logitech",
+  "Portronics",
+  "Tesla",
+  "Test by Pournima",
+  "Xilana",
+  "bkhafhsbajk",
+  "liuytrewrtyuiop",
+  "liuytrtyui"
+ ]
+}

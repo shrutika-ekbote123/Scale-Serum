@@ -1,0 +1,273 @@
+{
+ "name": "di_failing_script",
+ "test": {
+  "test_id": "05cc1f26-3527-48b4-99bc-c748963d44ab",
+  "brand_id": "bee79bff-d5f6-4220-a7d4-7a04bf173e59",
+  "ad_number": 53,
+  "version": 1,
+  "label": "v1",
+  "ad_name": "1411_PGLI_Dubai AI startup_ Actorsname_Cold_Square",
+  "source_ad_id": "120251070761150057",
+  "source_platform": "meta",
+  "funnel_stage": "cold",
+  "marketing_angle": "original",
+  "script_text": "dcvbnmvbnm,.wertyuio",
+  "score": 5,
+  "attention": 5,
+  "resonance": 0,
+  "creative": 0,
+  "conversion": 0,
+  "marketing_angle_execution": 0,
+  "verdict": "rework",
+  "verdict_band": "Rewrite required",
+  "ai_verdict": "Rewrite required - the submission consists entirely of random keystrokes rather than intelligible copy, failing every creative and direct-response standard.",
+  "emotional_angle": {
+   "label": "Non-existent / Unintelligible Keystrokes",
+   "status": "ANGLE OFF",
+   "critique": "The brief requires an Original angle, which demands a clarity-first presentation of the core value proposition using an AIDA structure. The submitted text 'dcvbnmvbnm,.wertyuio' contains no language, value proposition, or structural narrative whatsoever. To satisfy the Original marketing angle for Lawtorney at a Cold stage, the copy must clearly present the software's ability to automate drafting without jargon or gimmicks."
+  },
+  "context_alignment": {
+   "brand_voice_fit": "Weak",
+   "funnel_stage_fit": "Weak",
+   "marketing_angle_fit": "Weak"
+  },
+  "section_breakdown": [
+   {
+    "section": "Hook",
+    "score": 1,
+    "comment": "The script opens with 'dcvbnmvbnm,.wertyuio', which is completely unreadable keyboard gibberish rather than a viable scroll-stopping line. It earns a single point strictly because text was provided, but loses nine points for totally failing Schwartz's Problem-Aware stage matching and the 4 U's framework. In the first three seconds on Meta, a busy project lawyer or general counsel glances at this, registers immediate confusion or assumes an accidental glitch, and swipes away instantly. This total lack of cognitive relevance drives the 3-second view rate toward zero while sending ad costs surging on Meta feeds. The hook must immediately address drafting fatigue: 'Still spending 14 hours a week manually drafting repetitive legal documents?'"
+   },
+   {
+    "section": "Problem / Tension",
+    "score": 0,
+    "comment": "There is no identifiable problem section present in the copy 'dcvbnmvbnm,.wertyuio', violating the core rule of establishing clear friction before introducing an offer. It receives zero points because it does not identify document drafting fatigue, deadline pressure, or billable hour leakage. A legal professional seeing this experiences zero emotional resonance, zero self-recognition, and absolute indifference. Without tension, viewer retention drops off immediately before reaching the 5-second threshold, wiping out mid-funnel conversion potential entirely. You must explicitly build tension around the tedious, error-prone nature of manual contract drafting that eats into higher-value casework."
+   },
+   {
+    "section": "Solution / Offer",
+    "score": 0,
+    "comment": "The text 'dcvbnmvbnm,.wertyuio' does not mention Lawtorney, legal technology, or automated drafting workflows in any capacity. It scores zero because it completely violates the Clarity over cleverness principle and provides no benefit-led explanation of the SaaS platform. A prospect scanning this beat feels zero comprehension and zero interest, as no software solution or operational relief is presented. This absence destroys conversion intent and makes remarketing retargeting impossible. The fix requires introducing Lawtorney cleanly: 'Lawtorney streamlines routine contract drafting so your legal team generates accurate, firm-standard agreements in minutes rather than hours.'"
+   },
+   {
+    "section": "Social Proof / Credibility",
+    "score": 0,
+    "comment": "This draft contains zero credibility markers, omitting all client numbers, accuracy metrics, and partner endorsements within the text 'dcvbnmvbnm,.wertyuio'. It scores zero because legal professionals demand rigorous proof before trusting third-party software with sensitive documentation. In-house counsel and law partners viewing unverified claims naturally default to skepticism, which spikes perceived risk and kills downstream engagement. Without concrete evidence, trust is impossible to establish on cold traffic, crippling click-through rates. You must insert specific proof, such as: '[Used by over 500 legal teams to cut drafting turnaround times by 60% without compromising compliance].'"
+   },
+   {
+    "section": "Call to Action",
+    "score": 0,
+    "comment": "There is no call to action anywhere within the string 'dcvbnmvbnm,.wertyuio', leaving the audience with no clear next step. It receives zero points because it fails the primary CTA formula of [action verb] + [what they get] + [qualifier] suited for cold Meta traffic. The viewer finishes the video with total decision inertia, uncertain whether they should request a product walkthrough or visit a landing page. This missing step causes an absolute collapse in outbound CTR and inflates cost-per-lead to unsustainable levels. Provide a low-friction action matched to cold prospects: 'See a 3-minute interactive demo at lawtorney.com and test your first draft free today.'"
+   },
+   {
+    "section": "Pacing & Tightness",
+    "score": 0,
+    "comment": "The submitted script 'dcvbnmvbnm,.wertyuio' lacks syntax, cadence, rhythm, or human-readable phrasing for video voiceover. It scores zero because it cannot be paced, voiced, or timed against on-screen visuals in a 15-to-30 second direct-response asset. An actor or voice artist attempting to deliver this would sound completely nonsensical, fracturing viewer comprehension within the opening frame. This structural failure causes 100% viewer drop-off within the first two seconds of playback. The script requires a ground-up rewrite that moves smoothly across a four-beat structure: hook, problem agitate, software solution, and clear CTA."
+   }
+  ],
+  "improvements": [
+   {
+    "title": "Replace gibberish with a problem-focused hook",
+    "why_it_matters": "The opening line 'dcvbnmvbnm,.wertyuio' provides zero cognitive hook, causing legal professionals to scroll past in the first second and tanking ad spend efficiency on Meta.",
+    "suggested_rewrite": "How many hours did your team spend drafting repetitive legal agreements this week?",
+    "metrics_impacted": "3-sec view rate, thumb-stop ratio"
+   },
+   {
+    "title": "Introduce Lawtorney's software solution clearly",
+    "why_it_matters": "Cold traffic cannot convert or understand the platform without a clear value proposition explaining how the SaaS saves time without sacrificing document accuracy.",
+    "suggested_rewrite": "Meet Lawtorney: the automated drafting software built specifically for project legal teams who need to turn out flawless, compliant contracts in minutes, not hours.",
+    "metrics_impacted": "Video completion rate, CTR"
+   },
+   {
+    "title": "Add a low-friction cold-traffic call to action",
+    "why_it_matters": "Without an explicit next step, interested legal professionals take no action, driving cost-per-click higher and yielding zero qualified leads.",
+    "suggested_rewrite": "Watch a 3-minute interactive workflow demo and see how your firm can automate its next 50 contracts.",
+    "metrics_impacted": "CTR, Cost per Lead (CPL)"
+   }
+  ],
+  "what_worked": [],
+  "what_to_fix": [
+   "Hook (1/10) — The script opens with 'dcvbnmvbnm,.wertyuio', which is completely unreadable keyboard gibberish rather than a viable scroll-stopping line. It earns a single point strictly because text was provided, but loses nine points for totally failing Schwartz's Problem-Aware stage matching and the 4 U's framework. In the first three seconds on Meta, a busy project lawyer or general counsel glances at this, registers immediate confusion or assumes an accidental glitch, and swipes away instantly. This total lack of cognitive relevance drives the 3-second view rate toward zero while sending ad costs surging on Meta feeds. The hook must immediately address drafting fatigue: 'Still spending 14 hours a week manually drafting repetitive legal documents?'",
+   "Problem / Tension (0/10) — There is no identifiable problem section present in the copy 'dcvbnmvbnm,.wertyuio', violating the core rule of establishing clear friction before introducing an offer. It receives zero points because it does not identify document drafting fatigue, deadline pressure, or billable hour leakage. A legal professional seeing this experiences zero emotional resonance, zero self-recognition, and absolute indifference. Without tension, viewer retention drops off immediately before reaching the 5-second threshold, wiping out mid-funnel conversion potential entirely. You must explicitly build tension around the tedious, error-prone nature of manual contract drafting that eats into higher-value casework.",
+   "Solution / Offer (0/10) — The text 'dcvbnmvbnm,.wertyuio' does not mention Lawtorney, legal technology, or automated drafting workflows in any capacity. It scores zero because it completely violates the Clarity over cleverness principle and provides no benefit-led explanation of the SaaS platform. A prospect scanning this beat feels zero comprehension and zero interest, as no software solution or operational relief is presented. This absence destroys conversion intent and makes remarketing retargeting impossible. The fix requires introducing Lawtorney cleanly: 'Lawtorney streamlines routine contract drafting so your legal team generates accurate, firm-standard agreements in minutes rather than hours.'",
+   "Social Proof / Credibility (0/10) — This draft contains zero credibility markers, omitting all client numbers, accuracy metrics, and partner endorsements within the text 'dcvbnmvbnm,.wertyuio'. It scores zero because legal professionals demand rigorous proof before trusting third-party software with sensitive documentation. In-house counsel and law partners viewing unverified claims naturally default to skepticism, which spikes perceived risk and kills downstream engagement. Without concrete evidence, trust is impossible to establish on cold traffic, crippling click-through rates. You must insert specific proof, such as: '[Used by over 500 legal teams to cut drafting turnaround times by 60% without compromising compliance].'",
+   "Call to Action (0/10) — There is no call to action anywhere within the string 'dcvbnmvbnm,.wertyuio', leaving the audience with no clear next step. It receives zero points because it fails the primary CTA formula of [action verb] + [what they get] + [qualifier] suited for cold Meta traffic. The viewer finishes the video with total decision inertia, uncertain whether they should request a product walkthrough or visit a landing page. This missing step causes an absolute collapse in outbound CTR and inflates cost-per-lead to unsustainable levels. Provide a low-friction action matched to cold prospects: 'See a 3-minute interactive demo at lawtorney.com and test your first draft free today.'",
+   "Pacing & Tightness (0/10) — The submitted script 'dcvbnmvbnm,.wertyuio' lacks syntax, cadence, rhythm, or human-readable phrasing for video voiceover. It scores zero because it cannot be paced, voiced, or timed against on-screen visuals in a 15-to-30 second direct-response asset. An actor or voice artist attempting to deliver this would sound completely nonsensical, fracturing viewer comprehension within the opening frame. This structural failure causes 100% viewer drop-off within the first two seconds of playback. The script requires a ground-up rewrite that moves smoothly across a four-beat structure: hook, problem agitate, software solution, and clear CTA.",
+   "Replace gibberish with a problem-focused hook — The opening line 'dcvbnmvbnm,.wertyuio' provides zero cognitive hook, causing legal professionals to scroll past in the first second and tanking ad spend efficiency on Meta.",
+   "Introduce Lawtorney's software solution clearly — Cold traffic cannot convert or understand the platform without a clear value proposition explaining how the SaaS saves time without sacrificing document accuracy.",
+   "Add a low-friction cold-traffic call to action — Without an explicit next step, interested legal professionals take no action, driving cost-per-click higher and yielding zero qualified leads."
+  ],
+  "top_recommendation": "Replace gibberish with a problem-focused hook The opening line 'dcvbnmvbnm,.wertyuio' provides zero cognitive hook, causing legal professionals to scroll past in the first second and tanking ad spend efficiency on Meta. Try: \"How many hours did your team spend drafting repetitive legal agreements this week?\"",
+  "ai_fallback": false,
+  "created_by_user_id": "d946255a-e0c4-4b55-8fc7-ad35b0fd327d",
+  "created_at": "2026-09-24T05:09:06.044000+00:00"
+ },
+ "brand": {
+  "id": "bee79bff-d5f6-4220-a7d4-7a04bf173e59",
+  "name": "DI",
+  "timezone": "UTC",
+  "currency": "INR",
+  "brand_brain_id": "c6f11180b27247c6a3474ce8e5e2f7f6"
+ },
+ "brand_brain": {
+  "answers": {
+   "businessType": "SaaS / Software",
+   "idealCustomer": "They are project lawyers and legal professionals burdened by the exhausting, time-intensive nature of manual document drafting. Balancing heavy caseloads with the demand for meticulous precision leaves them overwhelmed by repetitive, low-leverage administrative tasks. Their primary objective is a reliable, streamlined workflow that accelerates draft creation without compromising on legal quality or compliance standards. They decide to purchase when they encounter a dependable solution that demonstrably reduces manual drafting effort and protects their valuable billable hours.",
+   "brandVoice": "Professional / Authoritative",
+   "language": "English only",
+   "trafficChannels": [
+    "Google Search",
+    "Meta (Facebook + Instagram)"
+   ],
+   "salesCycle": "3+ months",
+   "competitors": [
+    "sa HQ",
+    "ada Collective",
+    "dss Collective"
+   ],
+   "marketingGoal": "More leads (volume)",
+   "journey": "Legal professionals, overwhelmed by practice demands, first discover Lawtorney through Google Search while seeking solutions for operational efficiency and client acquisition. They then engage with Lawtorney's valuable website content, learning about expert guidance and proven strategies. Interested individuals provide their contact information, becoming a lead, and subsequently participate in a discovery call to discuss their specific challenges and explore tailored solutions. Upon conversion, these leads become clients, onboarding into Lawtorney's coaching or consulting services, where they receive ongoing support and guidance to implement strategies for a more profitable and balanced legal career."
+  },
+  "context": {
+   "industry": "Law",
+   "brandName": "DI",
+   "website": "https://app.scaleserum.com",
+   "audienceShort": "cxo,gho",
+   "adBudget": "234567"
+  },
+  "brand_brain_id": "c6f11180b27247c6a3474ce8e5e2f7f6",
+  "brand_name": "DI"
+ },
+ "performance": {
+  "ad_id": "120251070761150057",
+  "window": "lifetime",
+  "window_days": null,
+  "days_with_data": 4,
+  "first_date": "2026-06-24",
+  "last_date": "2026-06-27",
+  "stale": true,
+  "spend": 3100.04,
+  "impressions": 8235,
+  "clicks": 1012,
+  "leads": 94,
+  "purchases": 0,
+  "ctr_pct": 12.29,
+  "cpm": 376.45,
+  "cpc": 3.06,
+  "cpl": 32.98,
+  "ad_name": "1411_PGLI_Dubai AI startup_ Actorsname_Cold_Square",
+  "status": "ACTIVE",
+  "effective_status": "ADSET_PAUSED"
+ },
+ "creatives": {
+  "winners": [
+   {
+    "ad_id": "120251070761160057",
+    "ad_name": "1410 - PGLI_ Dubai Dream Career+Pain point angle_Actorsname_Cold_Square",
+    "score": 86.0,
+    "verdict": "scale",
+    "format": null,
+    "hook_analysis": "Strong opener — CTR 6.1% puts thumbstop in the top tier for this account.",
+    "script_copy": "Lead-gen copy; optimise the form/offer step to lift click→lead.",
+    "analyzed_at": "2026-09-17T07:33:31.513000+00:00"
+   },
+   {
+    "ad_id": "120253441492710670",
+    "ad_name": "Caroursel1",
+    "score": 86.0,
+    "verdict": "scale",
+    "format": null,
+    "hook_analysis": "Strong opener — CTR 4.9% puts thumbstop in the top tier for this account.",
+    "script_copy": "Lead-gen copy; optimise the form/offer step to lift click→lead.",
+    "analyzed_at": "2026-09-17T07:33:31.498000+00:00"
+   },
+   {
+    "ad_id": "120253762247400670",
+    "ad_name": "Caroursel4",
+    "score": 86.0,
+    "verdict": "scale",
+    "format": null,
+    "hook_analysis": "Strong opener — CTR 4.3% puts thumbstop in the top tier for this account.",
+    "script_copy": "Lead-gen copy; optimise the form/offer step to lift click→lead.",
+    "analyzed_at": "2026-09-17T07:33:31.496000+00:00"
+   }
+  ],
+  "losers": [
+   {
+    "ad_id": "52518618882012",
+    "ad_name": "12june_camp_shraddha",
+    "score": 17.0,
+    "verdict": "pause",
+    "format": null,
+    "hook_analysis": "Weak hook — CTR 0.0% suggests the opening 3s are not stopping the scroll. Test a new pattern-interrupt.",
+    "script_copy": "Lead-gen copy; optimise the form/offer step to lift click→lead.",
+    "analyzed_at": "2026-07-02T07:20:55.950000+00:00"
+   },
+   {
+    "ad_id": "6940139076492",
+    "ad_name": "2may_mena_webinar_nurturing2",
+    "score": 17.0,
+    "verdict": "pause",
+    "format": null,
+    "hook_analysis": "Weak hook — CTR 0.0% suggests the opening 3s are not stopping the scroll. Test a new pattern-interrupt.",
+    "script_copy": "Lead-gen copy; optimise the form/offer step to lift click→lead.",
+    "analyzed_at": "2026-06-30T04:17:16.593000+00:00"
+   }
+  ]
+ },
+ "competitors": [
+  {
+   "ad_archive_id": "992070833180585",
+   "hook": "🌟 Do You Aspire to Lead Fortune 500 Companies? Join the Ranks of Global Board Directors Valued in 50+ Nations\n\nAchieve Boardroom Excellence with our Top 3 Strategies for Non-executive and International Corporate Directors. Our program isn't just training—it's your entry into the world of influential leadership.\n\nThis isn't just a title; it's an exclusive club. Gain the skills and recognition needed to join the ranks of the world's most respected board members and Corporate Directors.\n\nExclusive Benefits for Attendees:\n✅ Earn a globally recognized qualification, enhancing your credibility.\n✅ Master the skills to contribute meaningfully to International corporate governance.\n✅ Become a leader in Environmental, Social, and Governance (ESG) practices.\n✅Opportunity to upgrade to Doctorate.\n✅ Gain a valuable credential that strengthens your professional resilience.\n\nEmpower yourself with the knowledge and status to excel in boardrooms across the globe. Join our upcoming webinar and take the first step towards boardroom leadership. This program has empowered over 1,000 executives to join prestigious boards of listed companies in 50+ nations. Limited Seats Available for Webinar -\nRegister Today!",
+   "creative_type": "video",
+   "est_run_days": 134,
+   "status": "active"
+  },
+  {
+   "ad_archive_id": "1496666138675829",
+   "hook": "🌟 Do You Aspire to Lead Fortune 500 Companies? Join the Ranks of Global Board Directors Valued in 50+ Nations\n\nAchieve Boardroom Excellence with our Top 3 Strategies for Non-executive and International Corporate Directors. Our program isn't just training—it's your entry into the world of influential leadership.\n\nThis isn't just a title; it's an exclusive club. Gain the skills and recognition needed to join the ranks of the world's most respected board members and Corporate Directors.\n\nExclusive Benefits for Attendees:\n✅ Earn a globally recognized qualification, enhancing your credibility.\n✅ Master the skills to contribute meaningfully to International corporate governance.\n✅ Become a leader in Environmental, Social, and Governance (ESG) practices.\n✅Opportunity to upgrade to Doctorate.\n✅ Gain a valuable credential that strengthens your professional resilience.\n\nEmpower yourself with the knowledge and status to excel in boardrooms across the globe. Join our upcoming webinar and take the first step towards boardroom leadership. This program has empowered over 1,000 executives to join prestigious boards of listed companies in 50+ nations. Limited Seats Available for Webinar -\nRegister Today!",
+   "creative_type": "video",
+   "est_run_days": 119,
+   "status": "active"
+  },
+  {
+   "ad_archive_id": "1061283649587199",
+   "hook": "With rising demand and commission-based earnings now legally allowed in India, boardroom roles are quickly becoming among the most lucrative in the corporate world.\nBut these seats aren’t handed out—they go to those who are prepared.\n\nThat’s why Directors’ Institute’s globally recognized program trains professionals not just for qualifications—but for real boardroom readiness.\n\nHere’s what you’ll gain by joining:\n\n✅ Join 100s of professionals who landed directorships in record time.\n✅ Learn how to navigate cross-border governance challenges confidently.\n✅ Become an ESG-savvy leader—an increasingly vital boardroom asset.\n✅ Unmatched networking opportunities with forward-thinking professionals.\n\nIf you're ready to earn, influence, and lead—start where hundreds of directors did. Join our FREE 1-hour webinar, today!",
+   "creative_type": "video",
+   "est_run_days": 70,
+   "status": "active"
+  },
+  {
+   "ad_archive_id": "1636775907391777",
+   "hook": "🌟 Do You Aspire to Lead Fortune 500 Companies? Join the Ranks of Global Board Directors Valued in 50+ Nations\n\nAchieve Boardroom Excellence with our Top 3 Strategies for Non-executive and International Corporate Directors. Our program isn't just training—it's your entry into the world of influential leadership.\n\nThis isn't just a title; it's an exclusive club. Gain the skills and recognition needed to join the ranks of the world's most respected board members and Corporate Directors.\n\nExclusive Benefits for Attendees:\n✅ Earn a globally recognized qualification, enhancing your credibility.\n✅ Master the skills to contribute meaningfully to International corporate governance.\n✅ Become a leader in Environmental, Social, and Governance (ESG) practices.\n✅Opportunity to upgrade to Doctorate.\n✅ Gain a valuable credential that strengthens your professional resilience.\n\nEmpower yourself with the knowledge and status to excel in boardrooms across the globe. Join our upcoming webinar and take the first step towards boardroom leadership. This program has empowered over 1,000 executives to join prestigious boards of listed companies in 50+ nations. Limited Seats Available for Webinar -\nRegister Today!",
+   "creative_type": "video",
+   "est_run_days": 70,
+   "status": "active"
+  },
+  {
+   "ad_archive_id": "2284025518999314",
+   "hook": "{{product.brand}}",
+   "creative_type": "carousel",
+   "est_run_days": 55,
+   "status": "active"
+  }
+ ],
+ "versions": [],
+ "other_brands": [
+  "AIFE",
+  "Acme",
+  "BigData",
+  "Dimond",
+  "FitNation Mumbai",
+  "Google Ads",
+  "Kaizen CRM",
+  "Kaizen Tech Solutions",
+  "Lawttorney",
+  "Logitech",
+  "Portronics",
+  "Tesla",
+  "Test by Pournima",
+  "Xilana",
+  "bkhafhsbajk",
+  "liuytrewrtyuiop",
+  "liuytrtyui"
+ ]
+}

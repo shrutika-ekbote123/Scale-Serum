@@ -1,0 +1,192 @@
+{
+ "name": "review_did_not_complete",
+ "test": {
+  "test_id": "b10eb698-d70a-4a56-920f-3d68192f7319",
+  "brand_id": "7cf92106-03b9-45d5-ac28-773eb80e4a02",
+  "ad_number": 7,
+  "version": 1,
+  "label": "v1",
+  "ad_name": "941ICDP India_Podcast-Remuneration_Heval+Ashutosh_Cold_Square – Copy",
+  "source_ad_id": "120243722305800644",
+  "source_platform": "meta",
+  "funnel_stage": "cold",
+  "marketing_angle": "original",
+  "script_text": "One of the hard truths about board appointments is this... (small pause)\nStandard corporate resumes fail in the boardroom.\n \nAnd no, this video isn't just about teaching you how to build a better one.\n \nBecause board positions aren't awarded to the person with the best CV.\n \nThey're offered to the person who's visible, credible, and already part of the right conversations.\n \nIn fact, global executive talent data suggests that nearly 80% of executive and board opportunities are filled through networks, referrals, and targeted outreach.\n \nThink about that.\n \nYou may already have the leadership experience.\nThe industry expertise.\nThe track record.\n \nBut if your profile isn't reaching the people who influence board appointments, opportunities can pass by without you ever knowing they existed.\n \nThat's why aspiring directors need more than a strong resume.\nThey need board visibility.\nBoard positioning.\nAnd a strategy to get noticed where board opportunities actually emerge.\n \nWant to understand what makes professionals board-ready and board-visible?\nJoin our upcoming Board Readiness Webinar by World Development Corporation’s Directors’ Institute and discover how over 5000 experienced leaders are positioning themselves for board opportunities.\n \nRegister through the link below.",
+  "score": 50,
+  "attention": 50,
+  "resonance": 50,
+  "creative": 50,
+  "conversion": 50,
+  "marketing_angle_execution": 50,
+  "verdict": "rework",
+  "verdict_band": "Needs work before going live",
+  "ai_verdict": "Couldn't complete the AI review - try again.",
+  "emotional_angle": {
+   "label": "Original",
+   "status": null,
+   "critique": "The angle could not be assessed automatically."
+  },
+  "context_alignment": {
+   "brand_voice_fit": null,
+   "funnel_stage_fit": null,
+   "marketing_angle_fit": null
+  },
+  "section_breakdown": [
+   {
+    "section": "Hook",
+    "score": 5,
+    "comment": "Couldn't analyze automatically - review manually."
+   },
+   {
+    "section": "Problem / Tension",
+    "score": 5,
+    "comment": "Couldn't analyze automatically - review manually."
+   },
+   {
+    "section": "Solution / Offer",
+    "score": 5,
+    "comment": "Couldn't analyze automatically - review manually."
+   },
+   {
+    "section": "Social Proof / Credibility",
+    "score": 5,
+    "comment": "Couldn't analyze automatically - review manually."
+   },
+   {
+    "section": "Call to Action",
+    "score": 5,
+    "comment": "Couldn't analyze automatically - review manually."
+   },
+   {
+    "section": "Pacing & Tightness",
+    "score": 5,
+    "comment": "Couldn't analyze automatically - review manually."
+   }
+  ],
+  "improvements": [
+   {
+    "title": "Re-run the analysis",
+    "why_it_matters": "The automated review did not complete for this script.",
+    "suggested_rewrite": "Click Regenerate, or review the script manually against the brand voice.",
+    "metrics_impacted": null
+   }
+  ],
+  "what_worked": [],
+  "what_to_fix": [
+   "Hook (5/10) — Couldn't analyze automatically - review manually.",
+   "Problem / Tension (5/10) — Couldn't analyze automatically - review manually.",
+   "Solution / Offer (5/10) — Couldn't analyze automatically - review manually.",
+   "Social Proof / Credibility (5/10) — Couldn't analyze automatically - review manually.",
+   "Call to Action (5/10) — Couldn't analyze automatically - review manually.",
+   "Pacing & Tightness (5/10) — Couldn't analyze automatically - review manually.",
+   "Re-run the analysis — The automated review did not complete for this script."
+  ],
+  "top_recommendation": "Re-run the analysis The automated review did not complete for this script. Try: \"Click Regenerate, or review the script manually against the brand voice.\"",
+  "ai_fallback": true,
+  "created_by_user_id": "d946255a-e0c4-4b55-8fc7-ad35b0fd327d",
+  "created_at": "2026-08-04T04:06:53.022000+00:00"
+ },
+ "brand": {},
+ "brand_brain": {
+  "answers": {},
+  "context": {},
+  "brand_brain_id": null,
+  "brand_name": null
+ },
+ "performance": null,
+ "creatives": {
+  "winners": [
+   {
+    "ad_id": "120248378787150636",
+    "ad_name": "1393 - AIFE Ring Ad Most Powerful AI_Actorsname_cold",
+    "score": 91.0,
+    "verdict": "scale",
+    "format": null,
+    "hook_analysis": "Strong opener — CTR 14.0% puts thumbstop in the top tier for this account.",
+    "script_copy": "Lead-gen copy; optimise the form/offer step to lift click→lead.",
+    "analyzed_at": "2026-07-28T12:20:55.412000+00:00"
+   },
+   {
+    "ad_id": "120251070761150057",
+    "ad_name": "1411_PGLI_Dubai AI startup_ Actorsname_Cold_Square",
+    "score": 90.0,
+    "verdict": "scale",
+    "format": null,
+    "hook_analysis": "Strong opener — CTR 12.5% puts thumbstop in the top tier for this account.",
+    "script_copy": "Lead-gen copy; optimise the form/offer step to lift click→lead.",
+    "analyzed_at": "2026-07-24T05:52:14.520000+00:00"
+   },
+   {
+    "ad_id": "120250027882540057",
+    "ad_name": "1411_PGLI_Dubai AI startup_ Actorsname_Cold_Square",
+    "score": 89.0,
+    "verdict": "scale",
+    "format": null,
+    "hook_analysis": "Strong opener — CTR 11.9% puts thumbstop in the top tier for this account.",
+    "script_copy": "Lead-gen copy; optimise the form/offer step to lift click→lead.",
+    "analyzed_at": "2026-07-24T05:52:14.458000+00:00"
+   }
+  ],
+  "losers": [
+   {
+    "ad_id": "120247481835880644",
+    "ad_name": "1435\tICDP India_Prayas Mohanty_Client testimonial_WARM Ad_Square",
+    "score": 18.0,
+    "verdict": "pause",
+    "format": null,
+    "hook_analysis": "Weak hook — CTR 0.0% suggests the opening 3s are not stopping the scroll. Test a new pattern-interrupt.",
+    "script_copy": "Lead-gen copy; optimise the form/offer step to lift click→lead.",
+    "analyzed_at": "2026-07-28T12:20:55.427000+00:00"
+   },
+   {
+    "ad_id": "120246415531770644",
+    "ad_name": "Static_Ad2",
+    "score": 18.0,
+    "verdict": "pause",
+    "format": "static",
+    "hook_analysis": "Weak hook — CTR 0.0% suggests the opening 3s are not stopping the scroll. Test a new pattern-interrupt.",
+    "script_copy": "Lead-gen copy; optimise the form/offer step to lift click→lead.",
+    "analyzed_at": "2026-07-28T12:20:55.347000+00:00"
+   }
+  ]
+ },
+ "competitors": [
+  {
+   "ad_archive_id": "sim_911895214_3",
+   "hook": "Limited cohort — enrol before Friday",
+   "creative_type": "reel",
+   "est_run_days": 45,
+   "status": "active"
+  },
+  {
+   "ad_archive_id": "sim_1927710957_31",
+   "hook": "Limited cohort — enrol before Friday",
+   "creative_type": "reel",
+   "est_run_days": 45,
+   "status": "active"
+  },
+  {
+   "ad_archive_id": "sim_2707329438_14",
+   "hook": "Limited cohort — enrol before Friday",
+   "creative_type": "reel",
+   "est_run_days": 45,
+   "status": "active"
+  },
+  {
+   "ad_archive_id": "sim_2707329438_41",
+   "hook": "Limited cohort — enrol before Friday",
+   "creative_type": "static",
+   "est_run_days": 45,
+   "status": "active"
+  },
+  {
+   "ad_archive_id": "sim_911895214_2",
+   "hook": "From manager to leader — the accelerator path",
+   "creative_type": "carousel",
+   "est_run_days": 44,
+   "status": "active"
+  }
+ ],
+ "versions": [],
+ "other_brands": []
+}
