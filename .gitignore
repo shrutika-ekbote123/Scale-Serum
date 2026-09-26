@@ -61,3 +61,5 @@ scripts/bakeoff/workspace/
 # Saliency model weights. ~12 MB of binary, provisioned to the server as a
 # deploy artefact rather than committed - see VISION_LAB_PLAN.md.
 .models/
+# a generated work queue from evals/from_feedback.py, not source
+evals/candidates.jsonl

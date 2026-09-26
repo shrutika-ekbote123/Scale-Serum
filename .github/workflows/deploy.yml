@@ -74,7 +74,24 @@ jobs:
           GEMINI_API_KEY: ci-import-check-not-a-real-key
         run: |
           pip install pytest
-          python -m pytest tests/ -q -k "sales_call or vision_lab"
+          python -m pytest tests/ -q -k "sales_call or vision_lab or script_lab_coach"
+
+      - name: Creative Coach - offline evaluation
+        # Replays real questions against FROZEN contexts (evals/fixtures/), with
+        # no database, no API key and no spend, and compares the result with the
+        # committed baseline. It fails the build when a hard gate breaks - an
+        # invented figure, a placeholder shown to a user, another brand named in
+        # this brand's coaching - or when a case that used to pass stops passing.
+        #
+        # It says NOTHING about answer quality, because no model is called. That
+        # needs `python -m evals.run --adapter coach` against live data, which
+        # costs money and belongs on a schedule, not on every push.
+        #
+        # Re-snapshot with `python -m evals.fixtures` when the stored test rows
+        # change; refresh the baseline with --json evals/baseline-offline.json.
+        run: |
+          python -m evals.run --adapter fallback --offline \
+                 --baseline evals/baseline-offline.json
 
   deploy:
     name: Deploy
