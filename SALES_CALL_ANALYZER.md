@@ -132,6 +132,22 @@ return `transcription_not_configured`.
 Verify: `curl -s http://127.0.0.1:3001/health | jq .sales_call_analyzer`
 → expect `"transcription": "configured"`.
 
+**For speaker checks and voiceprints ([4.7](#47-speakers--voice-checks-and-rep-voiceprints)),
+once per server:**
+
+```
+python scripts/fetch_sca_models.py /root/scaleserum-models/sca   # outside the app dir
+```
+```
+SCA_MODEL_DIR=/root/scaleserum-models/sca
+SCA_SPEAKER_REFINE=shadow      # then `on` once shadow results look right
+SCA_LANGUAGE_ID=shadow         # from Phase 0; `on` to act on it
+SCA_SEGMENT_PASS=shadow        # customer turns in their own language; `on` once it looks right
+SCA_TONE=shadow                # how it was said; `on` once it looks right
+```
+
+Verify: `.speaker_refinement.voice_available` is `true`.
+
 ### 3.3 Recordings must be reachable by Deepgram 🟡
 
 Deepgram fetches the audio URL **itself**. It must be publicly reachable or a
@@ -568,8 +584,36 @@ is not supported at all.**
 When the backend sends no hint, the service can work the language out itself.
 A short window of the audio (3 minutes, starting at 0:20 — the opening is
 English on almost every call) goes to Gemini, which reports the **share** of each
-language rather than one winner. A regional answer is then used as the Deepgram
-language; `en` or `hi` changes nothing, because `multi` already covers both.
+language rather than one winner. The shares decide what Deepgram is sent:
+
+| Detected | Sent | `language_decision` |
+|---|---|---|
+| English ≥ 95% (`SCA_ENGLISH_ONLY_MIN_SHARE`) | `en` | `english_only` |
+| Any Hindi, or English below 95% | `multi` | `covered_by_multi` |
+| A regional language ≥ 80% (`SCA_REGIONAL_MIN_SHARE`) | its code, e.g. `kn` | `regional_code` |
+| A regional language below 80% | `multi` | `regional_minority` |
+
+`en` stops `multi` writing accented English words in Devanagari, and is billed at
+the lower monolingual rate. The 80% rule exists because a regional model cannot
+write English. On a mixed call it garbles the rep's half, including the
+self-introduction that speaker roles depend on. Measured 2026-09-28 with
+`scripts/sca_eval`:
+
+| Audio | `multi` | Regional code |
+|---|---|---|
+| All-Kannada speech, phone quality | 122% WER | **28% WER** |
+| All-Bengali speech, phone quality | 101% WER | **24% WER** |
+| 70–80% English, customer in kn/mr/pa | rep 9% WER, roles 78% | rep **35%** WER, roles **61%** |
+| Real call, 65% Marathi | Marathi comes out as Hindi, 385 words | Marathi right, English garbled, 252 words |
+
+So a mixed regional call stays complete on `multi`, and its regional half is
+still rough. Fixing that needs each speaker's segments transcribed in their own
+language (the next phase); `regional_minority` marks the calls that need it.
+
+**Keyterms.** The brand, product, rep and customer names are sent to Deepgram
+(`SCA_DEEPGRAM_KEYTERMS`), so "Manjunaf Gouda" and "Scale Serum" come back as
+"Manjunath Gowda" and "ScaleSerum". Those names are what speaker roles are found
+from. `processing.transcription_keyterm_count` records how many were sent.
 
 Measured end to end on 2026-09-17:
 
@@ -603,10 +647,252 @@ ffmpeg all leave `multi` in place and are recorded in
 it is under 8 MB, and identification is skipped for anything longer.
 `GET /health` reports `sales_call_analyzer.language_id.ffmpeg`.
 
+#### The customer's turns, in their own language — `SCA_SEGMENT_PASS`
+
+A mixed call has a problem neither setting solves. The rep speaks English and
+the customer Kannada, Marathi, Punjabi, Tamil or Telugu. `multi` garbles the
+customer, and a regional code garbles the rep. So after speakers are resolved,
+**only the customer's turns** are re-transcribed by Gemini in the detected
+language, each turn as its own clip.
+
+- **Deepgram's timings and speakers stay.** Gemini is never asked for a
+  timestamp, which is what it could not be trusted with.
+- **The rep's English is left alone.**
+- **Each re-transcribed segment keeps its original text** in
+  `text_original`, marked `text_source: "gemini_segment_pass"`.
+
+Measured on the customer's turns (`scripts/sca_eval`):
+
+| Customer language | Before (WER / words kept) | After |
+|---|---|---|
+| Kannada | 52% / 0.74 | **23% / 0.94** |
+| Marathi | 61% / 0.56 | **30% / 0.77** |
+| Punjabi | 51% / 0.68 | **33% / 0.81** |
+| Tamil | 54% / 0.80 | **9–12% / 0.98** |
+| Telugu | 47% / 0.78 | **14% / 0.93** |
+
+On the real Marathi test call it was correct Marathi, with the English and the
+names intact. Deepgram's own `mr` model had garbled the English there and
+dropped a whole exchange.
+
+**Which turns — `SCA_SEGMENT_PASS_SCOPE`, default `all`.** The first version
+re-transcribed only the customer's turns, assuming the rep speaks English. On the
+real Marathi test call (`testaudio/mycall4.mp3`) the rep switched into Marathi too,
+and his turns stayed garbled ("अपना अपना business growth site की अमचा platform बदल
+inquiry" for "आपण आपल्या business growth साठी आमच्या platform बद्दल inquiry"). Measured
+on synthetic regional calls:
+
+| Scope | Rep WER, rep code-switches | Rep WER, rep English only | Gemini cost/call |
+|---|---|---|---|
+| `customer` | 33% | 6.8% | ~$0.007 |
+| `mixed` (+ rep turns containing Indian script) | 26% | 6.8% | ~$0.013 |
+| **`all`** | **12%** | 9.4% | ~$0.02 |
+
+Two more changes came from the same call:
+
+- **Each clip reads into the silence after its turn,** up to 1 s, stopping 0.25 s
+  before the next turn. Deepgram had dropped a turn's last words into the gap
+  ("मग scale serum वेगळं काय करेल?" came back as "मग ScaleCRM").
+- **Gemini gets the same names as Deepgram:** brand, product, rep and customer. It
+  is told to use a name only when it is actually heard, and it had been writing
+  "ScaleCRM" for ScaleSerum. With the names it spelled ScaleSerum correctly and
+  did not force a name onto other words.
+
+**What it does not fix:** turns where Deepgram put two people under one speaker.
+The words come out right, but the speaker label stays wrong.
+
+It runs only when:
+
+- a regional language is at least 10% of the speech; and
+- the call was not already sent wholly in that language (80%+, see above).
+
+It is skipped for English and Hindi calls, which `multi` handles. It needs
+language detection (`SCA_LANGUAGE_ID` shadow/on) or a regional `language_hint`.
+
+A clip's new text is refused, keeping Deepgram's words, when it is empty or
+longer than speech allows (the signature of invented text). Cost: about
+**$0.01 of Gemini** per call that uses it, billed in the Gemini block and shown
+as `usage.tokens.segment_pass`. `processing.segment_pass` records what it did:
+`language`, `scope`, `segments`, `replaced`, `rejected`, and `reason` when it did not run.
+Modes are `off` (default), `shadow` (runs and records, changes nothing) and `on`.
+
 One consequence worth knowing: re-submitting a call with a different
 `language_hint` is now a **different** analysis, so it re-runs rather than
 returning the earlier result. The stored transcript is still reused when the
 language is unchanged, so this costs Deepgram nothing.
+
+### 4.7 Speakers — voice checks and rep voiceprints
+
+Deepgram decides "who spoke when" from voices alone, and gets it wrong in three
+measured ways:
+
+- It merges two same-gender voices into one speaker.
+- It gives a rep who switches language a second speaker id.
+- It hands the customer's one-word replies to the rep.
+
+Every one of these corrupts talk time and objection attribution. The service now
+checks each stretch of speech against the voices. When the rep has an enrolled
+**voiceprint**, it also checks against the rep's own voice.
+
+Measured on 16 calls with exact ground truth (`scripts/sca_eval`):
+
+| | Role accuracy | Both roles right | Customer replies credited correctly |
+|---|---|---|---|
+| Before | 78% | 8 / 16 | 20% |
+| Voiceprint from 1 call | 85% | 13 / 16 | 63% |
+| **Voiceprint from 2 calls** | **90%** | **15 / 16** | **67%** |
+
+Without a voiceprint the check deliberately changes very little. Comparing voices
+only with each other cannot tell "the rep switched to Hindi" from "a second
+person" safely. **Enrol reps.**
+
+#### Switching it on — `SCA_SPEAKER_REFINE`
+
+| Value | Behaviour |
+|---|---|
+| `off` | never runs (default) |
+| `shadow` | measures everything, records `processing.speaker_refinement`, changes nothing |
+| `on` | the checked speakers become the transcript's speakers |
+
+It needs `sherpa-onnx` and the model files: run `python scripts/fetch_sca_models.py`
+into `SCA_MODEL_DIR`, a folder outside the app directory. Without them analyses
+still complete, and `/health` → `sales_call_analyzer.speaker_refinement.voice_reason`
+says why the check is skipped. Cost: about 27 s of CPU per 10-minute call, with no
+provider spend.
+
+#### Enrolling a rep — `POST /api/sales-calls/reps/{rep_id}/voiceprint`
+
+`rep_id` is the CRM user id, the same value sent as `rep.id` on
+`/analyze`. **Send `rep.id` on every analysis**, or the voiceprint cannot be used.
+
+```json
+{
+  "audio_url": "https://.../recording.mp3",
+  "consent": { "confirmed": true, "recorded_by": "admin@brand.com" },
+  "analysis_id": "…",          // optional: use the rep's turns in this analysis
+  "speaker_id": "speaker_0",   // optional: which voice is the rep (default: the one labelled sales_rep)
+  "segments": [ {"start": 3.1, "end": 9.8} ],  // optional: explicit rep-only times
+  "add_to_existing": false,    // true = fold this sample into the rep's voiceprint
+  "rep_name": "Aniket Arora", "brand_id": "…"
+}
+```
+
+Which part of the recording is the rep, in order of preference:
+
+1. `segments` — times where only the rep speaks.
+2. `analysis_id` — the rep's turns in a completed analysis of **this same recording**.
+3. Neither — the whole recording must be the rep alone.
+
+**Enrol from two calls,** ideally one in each language the rep sells in: the
+first with `add_to_existing: false`, the second with `true`. The voice model
+shifts with language. A rep enrolled from English speech scored 0.73 on their
+English and 0.34 on their Hindi, close to a customer.
+
+Refusals (422, with `detail.reason`):
+
+| Reason | Meaning |
+|---|---|
+| `voiceprint_consent_required` | `consent.confirmed` was not `true` |
+| `voiceprint_sample_too_short` | under 20 s of speech |
+| `voiceprint_sample_has_more_than_one_voice` | the sample mixes voices — use `segments` or `analysis_id` |
+| `voiceprint_sample_inconsistent` | the speech does not sound like one consistent voice |
+| `voiceprint_rep_speaker_unknown` | that analysis did not identify exactly one rep; pass `speaker_id` |
+| `voiceprint_recording_mismatch` | `audio_url` is not the recording that analysis transcribed |
+
+`GET` on the same path returns the enrolment status: how much speech, how many
+samples, and who recorded consent and when. `usable: false` means it was
+enrolled under a model since replaced; re-enrol. `DELETE` erases it.
+
+**A voiceprint is biometric data about an employee.** It is created only with
+consent recorded, stored as 192 numbers (never audio), never returned by any
+endpoint, and deleted on request. Customers are never enrolled; their voices are
+compared in memory during one analysis and never stored.
+
+#### What changes in the report
+
+- `speakers[].role_basis` gains **`rep_voiceprint_match`**. It is `high`
+  confidence at ≥ 0.6 similarity and `medium` below. It wins over name evidence,
+  so a rep is identified even when the CRM record names someone else.
+- `transcript.rep_voice` — `{rep_id, speaker_id, score, model}` when the voice matched.
+- `processing.speaker_refinement` — `mode`, `applied`, `speakers_before` →
+  `speakers_after`, `merged`, `split`, `moved_words`, `voiceprint_used`, and the
+  stereo check.
+- `transcript.quality.vad_speech_seconds` and **`speech_kept`** — the share of
+  detected speech inside a transcribed turn. When available, it decides
+  `low_speech_coverage` (below 0.7), because it is not fooled by hold music.
+
+**Dual-channel recordings.** If the dialer records each side on its own channel,
+the service detects it and attributes every word by channel, which is exact. None
+of the current recordings is one: their "stereo" is the same mix twice. Ask the
+telephony provider for dual-channel recording.
+
+### 4.8 Tone — how it was said
+
+Until now the analysis read only words. "I don't think this works for me" is the
+same transcript whether it is curious, hesitant or angry. The criteria about tone
+("Warm, energetic and engaging tone", "Maintains a positive and calm tone",
+"Listens without interrupting") were rated from text and timestamps.
+
+With `SCA_TONE=on`:
+
+1. **Every turn is measured** from the audio: pace, pauses, loudness, pitch level
+   and range, reply latency, interruptions and fillers. Each is compared with
+   **that speaker's own usual**, because a deep voice is not a calm one.
+2. **Gemini listens to up to 12 key turns:** price and objection moments, the
+   customer's last words, and turns that sound unlike the speaker's usual. For
+   each it gives a tone — `neutral`, `interested`, `confident`, `hesitant`,
+   `confused`, `frustrated`, `urgent`, `disengaged` — with intensity, confidence,
+   and the cue it heard ("raised pitch, clipped").
+3. **Each tone is checked against the measurements.** When the measured voice
+   points the other way, the tone's confidence drops to `low`.
+4. **The analysis is told how it was said,** and must use that for tone, energy,
+   pace, hesitation, frustration and interruptions instead of guessing from words.
+
+**How accurate, measured on sentences whose words carry no tone:**
+
+| | Accuracy | Chance |
+|---|---|---|
+| Words only (what the analysis did before) | at chance | 14–20% |
+| **Listening, real actors (CREMA-D, 5 emotions)** | **48%** | 20% |
+| Human listeners on the same clips, voice only (as reported by the dataset authors) | ~41% | 20% |
+
+- **What it hears best:** positive and flat delivery (`interested` and
+  `disengaged`, 70%) and anger as `frustrated` (47%).
+- **What it hears worst:** nervousness as `hesitant` (12%).
+- **The confidence drop is justified.** When the measured voice contradicted the
+  tone heard, the tone was right only 23% of the time (10/44), against 53–57%
+  otherwise.
+
+**Treat tone as evidence, not a verdict.** A single sentence's emotion is hard
+even for people. On acted TTS speech it scored 100%, which says more about acted
+speech than about calls.
+
+#### What the report gains — `voice` (also at `transcript.voice`)
+
+```json
+"voice": {
+  "speakers": [ { "speaker_id": "speaker_0", "role": "customer", "talk_share": 0.31,
+                  "rate_wpm": 181, "median_reply_latency": 0.48, "interruptions_made": 0,
+                  "pitch_range_st": 5.2, "loudness_db": -22.1, "fillers_per_min": 0.5 } ],
+  "moments": [ { "segment_index": 16, "speaker_id": "speaker_0", "role": "customer",
+                 "start": 88.2, "end": 94.0, "quote": "Hello? Yeah. Yeah. Tell me...",
+                 "tone": "frustrated", "secondary": null, "intensity": "medium",
+                 "confidence": "medium", "cue": "brusque, repetitive, impatient",
+                 "measured": { "loudness_db": 1.3, "pitch_range_st": 0.9 },
+                 "acoustic_support": "supports" } ],
+  "tone_counts": { "customer": { "frustrated": 1, "confident": 3 } }
+}
+```
+
+**Frontend:**
+- Show `moments` on the transcript at their `segment_index`.
+- Grey out `confidence: "low"`.
+- `acoustic_support: "contradicts"` means the measured voice disagreed.
+
+**Cost:** about $0.02 of Gemini per 10-minute call, billed in the Gemini block and
+shown as `usage.tokens.tone`. `processing.tone` records the mode, how many moments
+were listened to, and a `reason` whenever the step did not run. Modes: `off`
+(default), `shadow` (listens and records, changes nothing) and `on`.
 
 ---
 
@@ -780,13 +1066,29 @@ Timestamps are copied from the transcript, never produced by the model.
 `language_detected` · `multilingual` · `diarization_available` ·
 `timestamps_available` · `speaker_count` · `segment_count` · `duration_seconds` ·
 `word_count` · `speakers[]` · `segments[]` ·
-`quality{mean_confidence,low_confidence_ratio,usable,warnings[]}`
+`quality{mean_confidence,low_confidence_ratio,speech_coverage,words_per_minute,usable,warnings[]}`
+
+`speech_coverage` is the share of the recording inside a transcribed turn;
+`words_per_minute` is per minute of recording. Below 0.6 coverage on a call
+longer than 30 s, `warnings` gets **`low_speech_coverage`**: speech was probably
+dropped, even though `mean_confidence` can still read 0.99. Show it. Real calls
+measured 0.77–1.0 coverage (median 0.89); a Hindi call transcribed as English
+measured 0.39.
+
+**`role_confidence` is one step lower when a name was matched loosely**: in
+another script ("मेरा नाम राजन है" for Rajan), misspelt ("Scale Serum"), or from a
+Hindi or Marathi introduction ("ScaleSerum se bol raha hoon").
 
 **`speakers[]`** — `speaker_id` · `role` · `name` · `role_basis` ·
 `role_confidence` · `talk_time_seconds` · `turn_count` · `word_count`
+**`role_basis`** ∈ `rep_voiceprint_match` · `crm_rep_self_introduction` ·
+`crm_customer_name_match` · `crm_customer_name_addressed` ·
+`single_other_speaker_by_elimination` · `supplied_by_caller` · `unresolved`
 **`role`** ∈ `sales_rep` · `customer` · `participant` · `unknown`
 
-**`segments[]`** — `index` · `speaker_id` · `start` · `end` · `text` · `confidence`
+**`segments[]`** — `index` · `speaker_id` · `start` · `end` · `text` · `confidence` ·
+`text_source` (`gemini_segment_pass` when re-transcribed, else null) · `text_original`
+(Deepgram's words, kept when `text` was replaced)
 
 ### Signal vocabularies (closed sets)
 
@@ -856,12 +1158,34 @@ exact.** Recommended: show a band once thresholds exist, rather than a number.
 `processing_interrupted` and can be retried. Acceptable at current volume; a
 proper job queue is the follow-up if volume grows.
 
-**3. Tone criteria need audio.** A pasted text transcript carries no tone or
-interruption information, so those criteria become not-applicable rather than
-being guessed at.
+**3. Tone needs audio, and is modest even then.** A pasted text transcript carries
+no tone, so those criteria become not-applicable. With `SCA_TONE=on`, tone is heard
+from the audio ([4.8](#48-tone--how-it-was-said)). That is 48% on real actors' five
+emotions, about human-listener level, and weakest on nervousness. It is evidence to
+read alongside the words, not a verdict.
 
-**4. Multilingual accuracy is unverified.** Hindi-English code-switching is
-supported and handled, but has not been measured against a large sample.
+**4. Multilingual and speaker accuracy, measured.** `scripts/sca_eval` scores
+every change against real calls, FLEURS speech in eight Indian languages, and
+synthetic two-speaker calls with exact ground truth. Measured 2026-09-28:
+
+- **Mixed regional calls, with the segment pass.** The customer's WER falls
+  from 47–61% to 9–33% depending on the language, and 77–98% of their words
+  are kept. Marathi and Punjabi remain the weakest, at about 30%. It depends on
+  Gemini, whose output varies between runs: the prompt was revised until three
+  repeated runs agreed within 1–2 points.
+- **Speaker errors, with a voiceprint.** With the rep enrolled from two calls,
+  15 of 16 synthetic calls had both roles right (90% of words), and 67% of
+  customer one-word replies were credited correctly (20% before). The remaining
+  call is two voices the model cannot tell apart. Without a voiceprint, speaker
+  errors are largely as before (78%).
+- **Roles are only as good as the evidence.** On the real test calls the rep
+  named in the CRM was often not the person on the call. A voiceprint removes
+  that dependency; name matching cannot.
+
+Next: recalibrate the voice and segment-pass settings on labelled real calls.
+They were measured on synthetic speech, and the synthetic calls were voiced by
+Gemini, which may flatter Gemini transcribing them. One real Marathi call
+agrees, but that is one call.
 
 ---
 

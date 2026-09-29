@@ -220,10 +220,15 @@ def lang_deps(store, cfg, *, decision=None, mode=pl.LANGUAGE_ID_ON, fetch_error=
     return deps
 
 
-def decision_for(code, ok=True):
+def decision_for(code, ok=True, share=85):
+    """A mostly-`code` call, shaped as identify() returns it: shares included.
+    A mixed call (share below REGIONAL_MIN_SHARE) stays on multi - see
+    test_sales_call_accuracy.py."""
     return lid.LanguageDecision(
         ok=ok, dominant_non_english=code, ms=3400,
-        languages=[{"code": "en", "share_percent": 52}, {"code": code, "share_percent": 48}],
+        languages=[{"code": "en", "share_percent": 100 - share},
+                   {"code": code, "share_percent": share}],
+        english_share=100 - share, dominant_share=share,
         input_tokens=552, output_tokens=51, thinking_tokens=294)
 
 

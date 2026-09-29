@@ -152,17 +152,81 @@ class TranscriptSegment(BaseModel):
     end: Optional[float] = None
     text: str = ""
     confidence: Optional[float] = None
+    # Set when the words were re-transcribed (segment pass): where the text now
+    # comes from, and Deepgram's original text, kept for audit and comparison.
+    text_source: Optional[str] = None
+    text_original: Optional[str] = None
 
 
 class TranscriptQuality(BaseModel):
     mean_confidence: Optional[float] = None
     low_confidence_ratio: Optional[float] = None
+    # Share of the recording covered by transcribed turns, and words per minute
+    # of recording. Confidence cannot see dropped speech - Deepgram is confident
+    # about the words it kept - so these are the signals that can.
+    speech_coverage: Optional[float] = None
+    words_per_minute: Optional[float] = None
+    # Voice activity detection: seconds of actual speech in the recording, and
+    # the share of it inside a transcribed turn. Better than speech_coverage,
+    # whose denominator counts hold music and silence. None without VAD.
+    vad_speech_seconds: Optional[float] = None
+    speech_kept: Optional[float] = None
     usable: bool = True
     warnings: list[str] = Field(default_factory=list)
 
 
+class VoiceSpeaker(BaseModel):
+    """How one speaker delivered the call, measured from the audio (prosody.py)."""
+    speaker_id: str
+    role: str = "unknown"
+    talk_share: Optional[float] = None          # of all talk time
+    rate_wpm: Optional[float] = None
+    median_reply_latency: Optional[float] = None  # seconds; negative = talked over
+    interruptions_made: int = 0
+    pitch_hz: Optional[float] = None
+    pitch_range_st: Optional[float] = None       # semitones; flat delivery is narrow
+    loudness_db: Optional[float] = None
+    fillers_per_min: Optional[float] = None
+
+
+class VoiceMoment(BaseModel):
+    """One turn the tone step listened to, and how it was said."""
+    segment_index: int
+    speaker_id: str
+    role: str = "unknown"
+    start: Optional[float] = None
+    end: Optional[float] = None
+    quote: str = ""
+    tone: str                                     # tone.TONES
+    secondary: Optional[str] = None
+    intensity: str = "medium"
+    confidence: str = "low"
+    cue: str = ""                                 # what was heard
+    # Measured delivery relative to this speaker's usual (z-scores), and whether
+    # it agrees with the tone heard: supports | contradicts | neutral.
+    measured: dict = Field(default_factory=dict)
+    acoustic_support: str = "neutral"
+
+
+class VoiceAnalysis(BaseModel):
+    """What the voice added to the words. Present only when the tone step ran."""
+    model: Optional[str] = None
+    prompt_version: Optional[str] = None
+    speakers: list[VoiceSpeaker] = Field(default_factory=list)
+    moments: list[VoiceMoment] = Field(default_factory=list)
+    # Per role, how often each tone was heard among the moments: {"customer": {"hesitant": 2}}
+    tone_counts: dict = Field(default_factory=dict)
+
+
 class NormalizedTranscript(BaseModel):
     transcript_version: str = "v1"
+    # The enrolled rep's voice, when it matched a speaker on this call:
+    # {"rep_id", "speaker_id", "score", "model"}. Kept with the transcript so a
+    # reused transcript keeps its voice evidence - for that rep only.
+    rep_voice: Optional[dict] = None
+    # How it was said (tone step). Kept with the transcript: it describes this
+    # recording, so a reused transcript keeps it.
+    voice: Optional[VoiceAnalysis] = None
     source: str = "deepgram"          # deepgram | supplied_structured | supplied_text
     language: Optional[str] = None
     language_detected: Optional[str] = None
@@ -212,6 +276,10 @@ class CriterionEvaluation(BaseModel):
     missing_behaviour: Optional[str] = None
     recommendation: Optional[str] = None
     evidence: list[Evidence] = Field(default_factory=list)
+    # Segment indices of voice.moments this criterion's observation refers to:
+    # the turns whose delivery was actually heard. Evidence stays verbatim text;
+    # this links a tone judgement to the moment that supports it.
+    voice_moments: list[int] = Field(default_factory=list)
 
 
 class StageEvaluation(BaseModel):
@@ -384,6 +452,12 @@ class ProcessingInfo(BaseModel):
     multichannel_requested: bool = False
     billed_channels: Optional[int] = None
     transcription_language_sent: Optional[str] = None
+    # How many keyterms (brand, product, rep and customer names) were sent. The
+    # terms themselves are not stored: they are names already in the request.
+    transcription_keyterm_count: Optional[int] = None
+    # Speaker refinement (diarization.py): mode, what it changed, whether a rep
+    # voiceprint was used and the stereo check. No embeddings are stored.
+    speaker_refinement: Optional[dict] = None
 
     # Language decision. Deepgram's own detector answers "en" for a call whose
     # customer speaks Marathi, so the language is either supplied by the caller
@@ -403,6 +477,18 @@ class ProcessingInfo(BaseModel):
     language_id_output_tokens: Optional[int] = None
     language_id_thinking_tokens: Optional[int] = None
     language_id_cached_tokens: Optional[int] = None
+    # Segment pass: the customer's turns re-transcribed in their own language.
+    # {mode, applied, language, segments, replaced, rejected, audio_seconds, ...}
+    segment_pass: Optional[dict] = None
+    segment_pass_input_tokens: Optional[int] = None
+    segment_pass_output_tokens: Optional[int] = None
+    segment_pass_thinking_tokens: Optional[int] = None
+    segment_pass_cached_tokens: Optional[int] = None
+    # Tone step: {mode, applied, moments, requests, ms, reason, model}.
+    tone: Optional[dict] = None
+    tone_input_tokens: Optional[int] = None
+    tone_output_tokens: Optional[int] = None
+    tone_thinking_tokens: Optional[int] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     # Estimated provider cost of this run, and of earlier runs of the same
@@ -525,6 +611,9 @@ class SalesCallAnalysis(BaseModel):
     context_adaptation: Optional[ContextAdaptation] = None
 
     transcript: Optional[NormalizedTranscript] = None
+    # How it was said, from the audio (tone step). Same object as
+    # transcript.voice, surfaced here because it is read on its own.
+    voice: Optional[VoiceAnalysis] = None
     context_used: ContextUsed = Field(default_factory=ContextUsed)
     analysis_quality: AnalysisQuality = Field(default_factory=AnalysisQuality)
     processing: ProcessingInfo = Field(default_factory=ProcessingInfo)
@@ -546,3 +635,41 @@ class AnalyzeAccepted(BaseModel):
 
 
 StageEvaluation.model_rebuild()
+
+
+# =========================================================================== #
+# Rep voiceprints
+# =========================================================================== #
+class VoiceprintConsent(BaseModel):
+    """A voiceprint is biometric data. It is created only when the backend
+    asserts the rep consented, and who recorded that consent is kept with it."""
+    confirmed: bool = False
+    recorded_by: Optional[str] = None     # the admin or system that captured consent
+    note: Optional[str] = None
+
+
+class VoiceprintSpan(BaseModel):
+    start: float
+    end: float
+
+
+class VoiceprintEnrolRequest(BaseModel):
+    """Enrol a rep's voice from a recording.
+
+    Which part of the recording is the rep, in order of preference:
+      1. `segments` - explicit times where only the rep speaks
+      2. `analysis_id` (+ optional `speaker_id`) - the rep's turns in a completed
+         analysis of THIS recording; without speaker_id, the speaker it labelled
+         sales_rep
+      3. neither - the whole recording is the rep alone (a dedicated sample)
+    """
+    audio_url: str
+    consent: VoiceprintConsent = Field(default_factory=VoiceprintConsent)
+    segments: Optional[list[VoiceprintSpan]] = None
+    analysis_id: Optional[str] = None
+    speaker_id: Optional[str] = None
+    brand_id: Optional[str] = None
+    rep_name: Optional[str] = None
+    # Fold this sample into the rep's existing voiceprint instead of replacing
+    # it. Enrol a rep who sells in two languages from speech in both.
+    add_to_existing: bool = False

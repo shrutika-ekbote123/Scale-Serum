@@ -221,6 +221,13 @@ def make_deps(store, cfg, *, llm_responses=None, transcribe=None):
         load_brand_brain=load_brand_brain,
         resolve_brand_ref=resolve_brand_ref,
         transcription_model="nova-test",
+        # Pinned off, never read from the environment: a developer's .env
+        # (loaded by any test that imports app) must not switch features on
+        # inside unrelated tests. Tests that want one set it themselves.
+        language_id_mode=pl.LANGUAGE_ID_OFF,
+        speaker_refine_mode=pl.SPEAKER_REFINE_OFF,
+        segment_pass_mode=pl.SEGMENT_PASS_OFF,
+        tone_mode=pl.TONE_OFF,
     )
     deps.extra["calls"] = calls
     return deps

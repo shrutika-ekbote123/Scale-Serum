@@ -18,6 +18,8 @@ NO PADDING
 """
 from __future__ import annotations
 
+import re
+
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -94,6 +96,7 @@ def build_report(*, analysis_id: str, ctx: AnalysisContext,
     """Assemble the final report. Pure: no clock beyond `updated_at`, no I/O."""
     scores: Optional[Scores] = scoring.get("scores") if scoring else None
     stage_evaluations: list[StageEvaluation] = (scoring or {}).get("stage_evaluations") or []
+    link_voice_moments(stage_evaluations, transcript)
     counts = (scoring or {}).get("counts") or {}
 
     warnings = list(transcript.quality.warnings) + list(extra_warnings or [])
@@ -161,12 +164,37 @@ def build_report(*, analysis_id: str, ctx: AnalysisContext,
         context_adaptation=(_build(ContextAdaptation, adaptation, affects_score=False)
                             if adaptation else None),
         transcript=transcript,
+        voice=transcript.voice if transcript is not None else None,
         context_used=context_used,
         analysis_quality=quality,
         processing=processing,
         usage=build_usage(processing),
         fallback=False,
     )
+
+
+_SEGMENT_MENTION = re.compile(r"(?:segment|turn|line)s?\s*#?\s*(\d+)|\[(\d+)\]", re.IGNORECASE)
+
+
+def link_voice_moments(stages: list[StageEvaluation], transcript: NormalizedTranscript) -> None:
+    """Point each criterion at the voice moments its observation talks about.
+
+    Measured on a real call: the model rated opening_tone "weak" because "in
+    segment 9, Aniket sounded hesitant" - the moment heard - but cited segment 6
+    as evidence, since evidence must be a verbatim quote. The link below makes
+    the tone judgement traceable to the moment that was actually heard. Only
+    indices that ARE voice moments are linked; nothing is inferred.
+    """
+    voice = getattr(transcript, "voice", None)
+    heard = {m.segment_index for m in voice.moments} if voice else set()
+    if not heard:
+        return
+    for stage in stages:
+        for crit in stage.criteria:
+            text = " ".join(filter(None, [crit.observation, crit.missing_behaviour]))
+            said = {int(a or b) for a, b in _SEGMENT_MENTION.findall(text or "")}
+            said |= {e.segment_index for e in crit.evidence}
+            crit.voice_moments = sorted(said & heard)
 
 
 def _round(value: Optional[float], places: int) -> Optional[float]:
@@ -201,9 +229,28 @@ def build_usage(processing: ProcessingInfo) -> UsageBlock:
                    processing.language_id_output_tokens,
                    processing.language_id_thinking_tokens))
 
+    segment = TokenUsage(
+        input=processing.segment_pass_input_tokens,
+        output=processing.segment_pass_output_tokens,
+        thinking=processing.segment_pass_thinking_tokens,
+        cached=processing.segment_pass_cached_tokens,
+        total=_add(processing.segment_pass_input_tokens,
+                   processing.segment_pass_output_tokens,
+                   processing.segment_pass_thinking_tokens))
+
+    tone = TokenUsage(
+        input=processing.tone_input_tokens, output=processing.tone_output_tokens,
+        thinking=processing.tone_thinking_tokens,
+        total=_add(processing.tone_input_tokens, processing.tone_output_tokens,
+                   processing.tone_thinking_tokens))
+
     tokens: dict[str, Any] = {"analysis": analysis}
     if language.total is not None:
         tokens["language_id"] = language
+    if segment.total is not None:
+        tokens["segment_pass"] = segment
+    if tone.total is not None:
+        tokens["tone"] = tone
 
     seconds = processing.audio_seconds_submitted
     cost = processing.cost
@@ -219,7 +266,7 @@ def build_usage(processing: ProcessingInfo) -> UsageBlock:
 
     return UsageBlock(
         tokens=tokens,
-        total_tokens=_add(analysis.total, language.total),
+        total_tokens=_add(analysis.total, language.total, segment.total, tone.total),
         audio=audio,
         cost=UsageCost(
             deepgram_usd=deepgram.usd if deepgram else None,

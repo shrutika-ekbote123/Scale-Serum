@@ -168,30 +168,93 @@ REGIONAL_LANGUAGES = {"mr", "ta", "te", "kn", "bn", "gu", "pa", "ur"}
 UNSUPPORTED_LANGUAGES = {"ml"}
 
 LANGUAGE_COVERED_BY_MULTI = "covered_by_multi"
+LANGUAGE_ENGLISH_ONLY = "english_only"
 LANGUAGE_REGIONAL = "regional_code"
+LANGUAGE_REGIONAL_MINORITY = "regional_minority"
 LANGUAGE_UNSUPPORTED = "unsupported_by_provider"
 LANGUAGE_UNKNOWN = "unknown_language_code"
 
+# At or above this share of English speech, the call is sent as `en` rather than
+# `multi`. multi on an all-English Indian call writes some accented English
+# words in Devanagari - the "Hindi words in an English call" complaint - and is
+# billed at the multilingual rate. Below it, multi keeps any Hindi. Hindi is
+# never overridden: sending `en` would drop the few Hindi sentences that multi
+# would have kept.
+ENGLISH_ONLY_MIN_SHARE = float(os.environ.get("SCA_ENGLISH_ONLY_MIN_SHARE", 95))
 
-def language_for(detected: Optional[str]) -> tuple[Optional[str], str]:
+# A regional language code is sent only when that language is at least this %
+# of the speech. A single-language regional model cannot write English: on
+# code-switched calls it wrecks the rep's half, and with it the rep's
+# self-introduction that role resolution needs. Measured 2026-09-28
+# (scripts/sca_eval):
+#   100% regional (FLEURS)       kn WER 122% -> 28%, bn 101% -> 24%   route it
+#   65% mr / 35% en (real call)  mr: Marathi right, English garbled, 252 words;
+#                                multi: Marathi as Hindi, 385 words   neither good
+#   20-30% regional (synthetic)  rep WER 9% -> 35%, roles 78% -> 61%  keep multi
+# Below the threshold multi keeps the call complete; the customer's regional
+# speech needs per-segment routing (Phase 2), recorded as `regional_minority`.
+REGIONAL_MIN_SHARE = float(os.environ.get("SCA_REGIONAL_MIN_SHARE", 80))
+
+
+def language_for(detected: Optional[str],
+                 english_share: Optional[float] = None,
+                 dominant_share: Optional[float] = None) -> tuple[Optional[str], str]:
     """(language to send, why). None means "leave the default alone".
 
     An unknown or unsupported language deliberately falls back to the default
     rather than being passed through: sending a code Deepgram does not accept
     fails the whole transcription, and a wrong-but-complete transcript beats no
-    transcript at all.
+    transcript at all. The same principle keeps a mixed regional call on multi
+    (REGIONAL_MIN_SHARE). Shares that were not reported leave the old routing.
     """
     code = (detected or "").strip().lower()
+    if (english_share is not None and english_share >= ENGLISH_ONLY_MIN_SHARE
+            and code not in MULTI_COVERED_LANGUAGES - {"en"}):
+        # A regional language at under 5% is lost by multi too, so `en` costs nothing.
+        return "en", LANGUAGE_ENGLISH_ONLY
     if not code or code in MULTI_COVERED_LANGUAGES:
         return None, LANGUAGE_COVERED_BY_MULTI
     if code in REGIONAL_LANGUAGES:
+        if dominant_share is not None and dominant_share < REGIONAL_MIN_SHARE:
+            return None, LANGUAGE_REGIONAL_MINORITY
         return code, LANGUAGE_REGIONAL
     if code in UNSUPPORTED_LANGUAGES:
         return None, LANGUAGE_UNSUPPORTED
     return None, LANGUAGE_UNKNOWN
 
 
-def build_params(language: Optional[str] = None) -> dict[str, Any]:
+# Keyterm prompting: names the model should expect. Measured 2026-09-28 on a
+# code-switched call: without them nova-3 multi wrote "Manjunaf Gouda" and
+# "Scale Serum"; with them, "Manjunath Gowda" and "ScaleSerum". Those names are
+# exactly what speakers.py searches for, so a misspelling costs the role.
+# Accepted by nova-3 with multi, en, hi, mr and kn (all returned 200).
+DEEPGRAM_KEYTERMS = os.environ.get("SCA_DEEPGRAM_KEYTERMS", "true").lower() == "true"
+MAX_KEYTERMS = int(os.environ.get("SCA_DEEPGRAM_MAX_KEYTERMS", 20))
+MAX_KEYTERM_CHARS = 60
+
+# English-only filler words ("um", "uh") kept in the transcript. Off by default:
+# they are for hesitation detection (tone, Phase 3), and they change the text
+# the evidence verifier quotes against.
+DEEPGRAM_FILLER_WORDS = os.environ.get("SCA_DEEPGRAM_FILLER_WORDS", "false").lower() == "true"
+
+
+def clean_keyterms(terms) -> list[str]:
+    """Distinct, trimmed, bounded. Order kept, so the caller decides priority."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for term in terms or ():
+        text = " ".join(str(term or "").split())[:MAX_KEYTERM_CHARS].strip()
+        if len(text) < 2 or text.lower() in seen:
+            continue
+        seen.add(text.lower())
+        out.append(text)
+        if len(out) >= MAX_KEYTERMS:
+            break
+    return out
+
+
+def build_params(language: Optional[str] = None,
+                 keyterms: Optional[list[str]] = None) -> dict[str, Any]:
     """Query parameters for a pre-recorded request.
 
     `diarize` is the reason this integration exists. `utterances` is what turns
@@ -208,11 +271,17 @@ def build_params(language: Optional[str] = None) -> dict[str, Any]:
     }
     if MULTICHANNEL:
         params["multichannel"] = "true"
+    if DEEPGRAM_FILLER_WORDS:
+        params["filler_words"] = "true"
     chosen = effective_language(language)
     if chosen:
         params["language"] = chosen
     elif DEEPGRAM_DETECT_LANGUAGE:
         params["detect_language"] = "true"
+    # keyterm is a nova-3 feature; older models reject the request outright.
+    terms = clean_keyterms(keyterms) if DEEPGRAM_KEYTERMS else []
+    if terms and DEEPGRAM_MODEL.startswith("nova-3"):
+        params["keyterm"] = terms          # httpx repeats a list: keyterm=a&keyterm=b
     return params
 
 
@@ -312,6 +381,7 @@ async def fetch_audio(audio_url: str) -> tuple[bytes, Optional[str]]:
 
 async def transcribe(audio_url: str, *, mime_type: Optional[str] = None,
                      language: Optional[str] = None,
+                     keyterms: Optional[list[str]] = None,
                      max_retries: Optional[int] = None) -> dict:
     """Transcribe and diarize a recording. Returns the raw Deepgram response.
 
@@ -325,8 +395,8 @@ async def transcribe(audio_url: str, *, mime_type: Optional[str] = None,
                             retryable=False)
 
     client = await get_client()
-    params = build_params(language)
-    attempts = DEEPGRAM_MAX_RETRIES if max_retries is None else max_retries
+    params = build_params(language, keyterms)
+    attempts =DEEPGRAM_MAX_RETRIES if max_retries is None else max_retries
     host = _safe_url(audio_url)
 
     last: Optional[DeepgramError] = None

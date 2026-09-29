@@ -60,6 +60,14 @@
       "value": "",
       "type": "string",
       "description": "Saved automatically."
+    },
+    {
+      "key": "repId",
+      "value": "postman-test-rep"
+    },
+    {
+      "key": "voiceAudioUrl",
+      "value": "{{audioUrl}}"
     }
   ],
   "item": [
@@ -95,6 +103,9 @@
               "pm.test('analyzer loaded', () => pm.expect(b.sales_call_analyzer.available).to.be.true);",
               "pm.test('storage configured', () => pm.expect(b.sales_call_analyzer.storage).to.eql('configured'));",
               "pm.test('no secret leaked', () => pm.expect(pm.response.text()).to.not.include('sk-'));",
+              "pm.test('speaker refinement reported', () => pm.expect(b.sales_call_analyzer.speaker_refinement).to.have.property('mode'));",
+              "pm.test('segment pass reported', () => pm.expect(b.sales_call_analyzer.segment_pass).to.have.property('mode'));",
+              "pm.test('tone step reported', () => pm.expect(b.sales_call_analyzer.tone).to.have.property('mode'));",
               "if (b.sales_call_analyzer.transcription !== 'configured') {",
               "  console.warn('DEEPGRAM_API_KEY not set — audio requests will report transcription_not_configured');",
               "}"
@@ -665,6 +676,257 @@
         "description": "Estimated spend for analyses created in [from, to). Deepgram is billed on audio x billed channels; Gemini on tokens including thinking and rejected attempts. Not a provider invoice - read `disclaimers`."
       },
       "response": []
+    },
+    {
+      "name": "14. Voiceprint — refused without consent",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/sales-calls/reps/{{repId}}/voiceprint",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "sales-calls",
+            "reps",
+            "{{repId}}",
+            "voiceprint"
+          ]
+        },
+        "description": "A voiceprint is biometric data. Without consent.confirmed=true nothing is fetched or stored.\n\nEXPECT: 422, reason voiceprint_consent_required.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"audio_url\": \"{{voiceAudioUrl}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('422', () => pm.response.to.have.status(422));",
+              "pm.test('consent reason', () => pm.expect(pm.response.json().detail.reason).to.eql('voiceprint_consent_required'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "15. Voiceprint — refused for an analysis that does not exist",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/sales-calls/reps/{{repId}}/voiceprint",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "sales-calls",
+            "reps",
+            "{{repId}}",
+            "voiceprint"
+          ]
+        },
+        "description": "Enrolling from an analysis uses the rep's turns in that analysis.\n\nEXPECT: 404.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"audio_url\": \"{{voiceAudioUrl}}\",\n  \"analysis_id\": \"does-not-exist\",\n  \"consent\": {\n    \"confirmed\": true,\n    \"recorded_by\": \"postman\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('404', () => pm.response.to.have.status(404));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "16. Voiceprint — enrol",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/sales-calls/reps/{{repId}}/voiceprint",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "sales-calls",
+            "reps",
+            "{{repId}}",
+            "voiceprint"
+          ]
+        },
+        "description": "Enrols {{repId}} from {{voiceAudioUrl}}.\n\nWith no `segments` or `analysis_id` the WHOLE recording must be the rep alone - point voiceAudioUrl at a solo sample, or add \"segments\": [{\"start\":..,\"end\":..}] for the rep's turns. A recording with two voices is refused with voiceprint_sample_has_more_than_one_voice, which is correct behaviour.\n\nTakes a few seconds (the recording is embedded here). Needs sherpa-onnx and the models in SCA_MODEL_DIR - otherwise 503 with the reason.\n\nEXPECT: 200, enrolled=true, stats.speech_seconds >= 20, and NO vector.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"audio_url\": \"{{voiceAudioUrl}}\",\n  \"consent\": {\n    \"confirmed\": true,\n    \"recorded_by\": \"postman\"\n  },\n  \"rep_name\": \"Postman Test Rep\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('enrolled', () => pm.expect(b.enrolled).to.be.true);",
+              "pm.test('enough speech', () => pm.expect(b.stats.speech_seconds).to.be.at.least(20));",
+              "pm.test('vector never returned', () => pm.expect(pm.response.text()).to.not.include('\"vector\"'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "17. Voiceprint — status",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/sales-calls/reps/{{repId}}/voiceprint",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "sales-calls",
+            "reps",
+            "{{repId}}",
+            "voiceprint"
+          ]
+        },
+        "description": "EXPECT: enrolled=true, usable=true, consent recorded, NO vector."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('enrolled and usable', () => { pm.expect(b.enrolled).to.be.true; pm.expect(b.usable).to.be.true; });",
+              "pm.test('consent kept', () => pm.expect(b.consent.confirmed).to.be.true);",
+              "pm.test('vector never returned', () => pm.expect(pm.response.text()).to.not.include('\"vector\"'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "18. Voiceprint — delete",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/sales-calls/reps/{{repId}}/voiceprint",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "sales-calls",
+            "reps",
+            "{{repId}}",
+            "voiceprint"
+          ]
+        },
+        "description": "Erases the voiceprint (right to erasure). The rep's calls fall back to name evidence.\n\nEXPECT: deleted=true."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "pm.test('deleted', () => pm.expect(pm.response.json().deleted).to.be.true);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "19. Voiceprint — status after delete",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/sales-calls/reps/{{repId}}/voiceprint",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "sales-calls",
+            "reps",
+            "{{repId}}",
+            "voiceprint"
+          ]
+        },
+        "description": "EXPECT: enrolled=false."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "pm.test('gone', () => pm.expect(pm.response.json().enrolled).to.be.false);"
+            ]
+          }
+        }
+      ]
     }
   ]
 }

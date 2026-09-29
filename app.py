@@ -79,6 +79,9 @@ if MONGODB_URI:
     # SCA_STORE_RAW_TRANSCRIPT is set - see sales_call_analyzer/store.py.
     sales_call_analyses = mongo_client[MONGODB_DB]["sales_call_analyses"]
     sales_call_transcripts_raw = mongo_client[MONGODB_DB]["sales_call_transcripts_raw"]
+    # Rep voiceprints: one 192-number vector per consenting rep, never audio.
+    # See sales_call_analyzer/voiceprints.py.
+    sca_rep_voiceprints = mongo_client[MONGODB_DB]["sca_rep_voiceprints"]
     # Vision Lab: one document per analysis, plus the per-frame measurement
     # record in its own collection with a TTL - it is an order of magnitude
     # larger than the report and only /rescore reads it.
@@ -106,6 +109,7 @@ else:
     brand_brains = None
     sales_call_analyses = None
     sales_call_transcripts_raw = None
+    sca_rep_voiceprints = None
     vision_lab_analyses = None
     vision_lab_measurements = None
 
@@ -174,6 +178,16 @@ DEEPGRAM_API_KEY = os.environ.get("DEEPGRAM_API_KEY")
 SCA_LANGUAGE_ID = os.environ.get("SCA_LANGUAGE_ID", "off").strip().lower()
 # The identifier runs on the same Gemini model as the analysis unless pinned.
 SCA_LANGUAGE_ID_MODEL = os.environ.get("SCA_LANGUAGE_ID_MODEL") or GEMINI_MODEL
+# Segment pass: the customer's turns re-transcribed by Gemini in their own
+# regional language (see transcription/segment_transcribe.py): off | shadow | on.
+SCA_SEGMENT_PASS = os.environ.get("SCA_SEGMENT_PASS", "off").strip().lower()
+SCA_SEGMENT_PASS_MODEL = os.environ.get("SCA_SEGMENT_PASS_MODEL") or GEMINI_MODEL
+# Tone step: how it was said, from the audio (sales_call_analyzer/tone.py).
+SCA_TONE = os.environ.get("SCA_TONE", "off").strip().lower()
+SCA_TONE_MODEL = os.environ.get("SCA_TONE_MODEL") or GEMINI_MODEL
+# Speaker refinement against voices and rep voiceprints: off | shadow | on.
+# Off by default - it costs ~27 s of CPU per 10-minute call in this process.
+SCA_SPEAKER_REFINE = os.environ.get("SCA_SPEAKER_REFINE", "off").strip().lower()
 # Kept in step with the transcription client below, which owns the real
 # default; billing prices whatever was actually sent.
 DEEPGRAM_MODEL = os.environ.get("DEEPGRAM_MODEL", "nova-3")
@@ -186,9 +200,14 @@ try:
     from sales_call_analyzer import pipeline as _sca_pipeline
     from sales_call_analyzer import scoring as _sca_scoring
     from sales_call_analyzer import store as _sca_store
-    from sales_call_analyzer.models import AnalyzeAccepted, AnalyzeRequest
+    from sales_call_analyzer import tone as _sca_tone
+    from sales_call_analyzer import voiceprints as _sca_voiceprints
+    from sales_call_analyzer.models import (AnalyzeAccepted, AnalyzeRequest,
+                                            VoiceprintEnrolRequest)
     from transcription import audio_slice as _sca_audio_slice
     from transcription import language_id as _sca_language_id
+    from transcription import segment_transcribe as _sca_segment
+    from transcription import voice as _sca_voice
 
     _sca_framework.load_framework()   # fail loudly here rather than per request
     _sca_framework.load_signals()
@@ -214,6 +233,9 @@ except Exception as _sca_import_error:  # pragma: no cover - import-time only
         call_id: str = ""
         status: str = "unavailable"
 
+    class VoiceprintEnrolRequest(BaseModel):  # type: ignore[no-redef]
+        audio_url: str = ""
+
 # Provider pricing, for cost estimates and the bill endpoint. Guarded on its own:
 # a typo in pricing.json disables billing, never the analyzer itself.
 BILLING_AVAILABLE = True
@@ -227,9 +249,11 @@ except Exception as _billing_error:  # pragma: no cover - import-time only
     print(f"WARNING: billing unavailable - {BILLING_ERROR}")
 
 sales_call_store = None
+sca_voiceprint_store = None
 if SALES_CALL_ANALYZER_AVAILABLE and sales_call_analyses is not None:
     sales_call_store = _sca_store.AnalysisStore(
         sales_call_analyses, raw_collection=sales_call_transcripts_raw)
+    sca_voiceprint_store = _sca_voiceprints.VoiceprintStore(sca_rep_voiceprints)
 
 
 # ---------------------------------------------------------------------------
@@ -676,6 +700,17 @@ async def health():
                 "model": SCA_LANGUAGE_ID_MODEL if SCA_LANGUAGE_ID != "off" else None,
                 "ffmpeg": (_sca_audio_slice.available()
                            if SALES_CALL_ANALYZER_AVAILABLE else None),
+            },
+            # Voices: speaker refinement and rep voiceprints. `voice_reason`
+            # says why they are unavailable (library or model file missing).
+            "speaker_refinement": _sca_voice_health(),
+            # Customer turns re-transcribed in their own language. Needs
+            # SCA_LANGUAGE_ID shadow/on to know the language.
+            "tone": {"mode": SCA_TONE,
+                     "model": SCA_TONE_MODEL if SCA_TONE != "off" else None},
+            "segment_pass": {
+                "mode": SCA_SEGMENT_PASS,
+                "model": SCA_SEGMENT_PASS_MODEL if SCA_SEGMENT_PASS != "off" else None,
             },
         },
         "vision_lab": await _vision_lab_health(),
@@ -1471,6 +1506,32 @@ async def _sca_resolve_brand_ref(lead_id: str) -> dict:
     return await run_in_threadpool(_pp_brand_ref, lead_id)
 
 
+def _sca_voice_health() -> dict:
+    if not SALES_CALL_ANALYZER_AVAILABLE:
+        return {"mode": SCA_SPEAKER_REFINE, "voice_available": False}
+    usable, why = _sca_voice.availability()
+    return {"mode": SCA_SPEAKER_REFINE, "voice_available": usable, "voice_reason": why,
+            "model": _sca_voice.model_id() if usable else None,
+            "voiceprints": "configured" if sca_voiceprint_store is not None else "not_configured"}
+
+
+async def _sca_load_voiceprint(rep_id):
+    if sca_voiceprint_store is None:
+        return None
+    return await sca_voiceprint_store.vector_for(rep_id, _sca_voice.model_id())
+
+
+async def _sca_classify_tone(clips):
+    """How chosen turns were said, heard by Gemini on the shared client."""
+    return await _sca_tone.classify_clips(client, SCA_TONE_MODEL, clips)
+
+
+async def _sca_segment_transcribe(clips, language, keyterms=None):
+    """A regional call's turns, re-transcribed in their language on the shared client."""
+    return await _sca_segment.transcribe_clips(client, SCA_SEGMENT_PASS_MODEL, clips, language,
+                                               keyterms=keyterms)
+
+
 async def _sca_identify_language(audio: bytes, *, mime_type: str = "audio/mpeg"):
     """Which languages are spoken in this audio. Uses the shared Gemini client.
 
@@ -1496,6 +1557,14 @@ def _sales_call_deps():
         identify_language=_sca_identify_language,
         fetch_audio=_sca_deepgram.fetch_audio,
         language_id_mode=SCA_LANGUAGE_ID,
+        speaker_refine_mode=SCA_SPEAKER_REFINE,
+        load_voiceprint=_sca_load_voiceprint,
+        segment_transcribe=_sca_segment_transcribe,
+        segment_pass_mode=SCA_SEGMENT_PASS,
+        segment_pass_model=SCA_SEGMENT_PASS_MODEL,
+        classify_tone=_sca_classify_tone,
+        tone_mode=SCA_TONE,
+        tone_model=SCA_TONE_MODEL,
     )
 
 
@@ -1647,6 +1716,120 @@ async def get_latest_sales_call_analysis(call_id: str):
     if not doc:
         raise HTTPException(status_code=404, detail="no analysis exists for that call_id")
     return await _sales_call_payload(doc)
+
+
+# ---------------------------------------------------------------------------
+# Rep voiceprints. Biometric data: created only with consent recorded, readable
+# only as status, deletable on request. See sales_call_analyzer/voiceprints.py.
+# ---------------------------------------------------------------------------
+def _require_voiceprints():
+    _require_sales_call_analyzer()
+    if sca_voiceprint_store is None:
+        raise HTTPException(status_code=503, detail="Voiceprint storage is not configured.")
+    usable, why = _sca_voice.availability()
+    if not usable:
+        raise HTTPException(status_code=503, detail={
+            "reason": why,
+            "message": ("Speaker recognition is not installed on this server: "
+                        "sherpa-onnx and the model in SCA_MODEL_DIR are required.")})
+
+
+async def _enrolment_spans(body, samples, rep_id: str) -> tuple[list, dict]:
+    """Which parts of the recording are the rep, and how that was decided."""
+    if body.segments:
+        return ([(s.start, s.end) for s in body.segments if s.end > s.start],
+                {"kind": "segments"})
+    if body.analysis_id:
+        doc = await sales_call_store.get(body.analysis_id)
+        transcript = (doc or {}).get("transcript")
+        if not transcript:
+            raise HTTPException(status_code=404,
+                                detail="analysis_id not found, or it has no transcript")
+        speaker_id = body.speaker_id
+        if not speaker_id:
+            reps = [sp for sp in transcript.get("speakers") or []
+                    if sp.get("role") == sca.ROLE_SALES_REP]
+            if len(reps) != 1:
+                raise HTTPException(status_code=422, detail={
+                    "reason": "voiceprint_rep_speaker_unknown",
+                    "message": ("That analysis did not identify exactly one sales rep. "
+                                "Pass speaker_id to say which voice is the rep.")})
+            speaker_id = reps[0]["speaker_id"]
+        duration = transcript.get("duration_seconds")
+        if duration and abs(len(samples) / 16000 - float(duration)) > 5:
+            raise HTTPException(status_code=422, detail={
+                "reason": "voiceprint_recording_mismatch",
+                "message": "audio_url is not the recording that analysis transcribed."})
+        spans = [(float(sg["start"]), float(sg["end"])) for sg in transcript.get("segments") or []
+                 if sg.get("speaker_id") == speaker_id
+                 and sg.get("start") is not None and sg.get("end") is not None]
+        return spans, {"kind": "analysis", "analysis_id": body.analysis_id,
+                       "speaker_id": speaker_id}
+    regions = await run_in_threadpool(_sca_voice.speech_regions, samples)
+    if regions is None:
+        regions = [(0.0, len(samples) / 16000)]
+    return regions, {"kind": "whole_recording"}
+
+
+@app.post("/api/sales-calls/reps/{rep_id}/voiceprint",
+          dependencies=[Depends(require_api_key)])
+async def enrol_rep_voiceprint(rep_id: str, body: VoiceprintEnrolRequest):
+    """Enrol (or replace) a rep's voiceprint from a recording of them.
+
+    Needs consent.confirmed=true. Returns status and quality stats - never the
+    vector. Takes a few seconds: the recording is fetched and embedded here.
+    """
+    _require_voiceprints()
+    if not body.consent.confirmed:
+        raise HTTPException(status_code=422, detail={
+            "reason": "voiceprint_consent_required",
+            "message": ("A voiceprint is biometric data. Record the rep's consent and "
+                        "send consent.confirmed=true with consent.recorded_by.")})
+    try:
+        audio, _content_type = await _sca_deepgram.fetch_audio(body.audio_url)
+    except Exception as err:  # noqa: BLE001 - DeepgramError carries a reason
+        raise HTTPException(status_code=422, detail={
+            "reason": getattr(err, "reason", "audio_unreachable"),
+            "message": getattr(err, "message", "The recording could not be fetched.")})
+    decoded = await _sca_audio_slice.decode(audio)
+    if decoded is None or not len(decoded):
+        raise HTTPException(status_code=422, detail={
+            "reason": "audio_not_decodable", "message": "The recording could not be decoded."})
+    samples = decoded[:, 0]
+    spans, source = await _enrolment_spans(body, samples, rep_id)
+    try:
+        vector, stats = await run_in_threadpool(
+            _sca_voiceprints.build, samples, spans, _sca_voice.embed)
+    except _sca_voiceprints.EnrolmentRejected as err:
+        raise HTTPException(status_code=422, detail={
+            "reason": err.reason, "message": err.message, "stats": err.stats})
+    return await sca_voiceprint_store.save(
+        rep_id=rep_id, vector=vector, model=_sca_voice.model_id(), stats=stats,
+        consent=body.consent.model_dump(), source=source,
+        brand_id=body.brand_id, rep_name=body.rep_name,
+        add_to_existing=body.add_to_existing)
+
+
+@app.get("/api/sales-calls/reps/{rep_id}/voiceprint",
+         dependencies=[Depends(require_api_key)])
+async def get_rep_voiceprint(rep_id: str):
+    """Whether a rep is enrolled, from how much speech, with whose consent. Never
+    the vector. `usable` is false when it was enrolled under a replaced model."""
+    _require_sales_call_analyzer()
+    if sca_voiceprint_store is None:
+        raise HTTPException(status_code=503, detail="Voiceprint storage is not configured.")
+    doc = await sca_voiceprint_store.get(rep_id)
+    return _sca_voiceprints.status(doc, _sca_voice.model_id())
+
+
+@app.delete("/api/sales-calls/reps/{rep_id}/voiceprint",
+            dependencies=[Depends(require_api_key)])
+async def delete_rep_voiceprint(rep_id: str):
+    """Erase a rep's voiceprint. Their calls fall back to name evidence."""
+    _require_sales_call_analyzer()
+    if sca_voiceprint_store is None:
+        raise HTTPException(status_code=503, detail="Voiceprint storage is not configured.")
+    return {"rep_id": rep_id, "deleted": await sca_voiceprint_store.delete(rep_id)}
 
 
 @app.post("/api/sales-calls/analysis/{analysis_id}/rescore",
