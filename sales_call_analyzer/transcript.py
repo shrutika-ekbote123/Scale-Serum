@@ -56,11 +56,25 @@ WARN_NO_SPEAKER_ATTRIBUTION = "no_speaker_attribution"
 WARN_NO_TIMESTAMPS = "no_timestamps"
 WARN_SINGLE_SPEAKER = "single_speaker_detected"
 WARN_LOW_CONFIDENCE = "low_transcription_confidence"
+WARN_LOW_COVERAGE = "low_speech_coverage"
 WARN_EMPTY = "empty_transcript"
 
 # Tunables. Env-driven so they can be adjusted without a code change, in the
 # style of the existing GEMINI_MODEL / PP_ORDER_STATS_TTL_SECONDS settings.
 MERGE_GAP_SECONDS = float(os.environ.get("SCA_TURN_MERGE_GAP_SECONDS", 1.0))
+# Dropped-speech guard. Measured 2026-09-15 on mycall3.mp3: when detection
+# picked English for a Hindi call, turns covered 39 s of 101 s (0.39) at 64
+# words/min; transcribed correctly, 80 s (0.79) at 128 words/min. Mean
+# confidence was high in BOTH runs, so confidence alone cannot catch this.
+# Calibrated 2026-09-28 with scripts/sca_eval: 13 unique real calls ran 0.77-1.0
+# (median 0.89), 16 synthetic calls 0.86-0.99. 0.6 sits clear of both.
+# It catches a whole call going missing, NOT one speaker's half: synthetic calls
+# that kept only 54% of a Marathi customer's words still covered 0.86+.
+MIN_SPEECH_COVERAGE = float(os.environ.get("SCA_MIN_SPEECH_COVERAGE", 0.6))
+COVERAGE_MIN_DURATION_SECONDS = float(os.environ.get("SCA_COVERAGE_MIN_DURATION_SECONDS", 30))
+# With voice activity detection, the share of detected speech inside a
+# transcribed turn. Below this, speech was dropped. See apply_vad().
+MIN_SPEECH_KEPT = float(os.environ.get("SCA_MIN_SPEECH_KEPT", 0.7))
 LOW_CONFIDENCE_AT = float(os.environ.get("SCA_LOW_CONFIDENCE_AT", 0.6))
 STRUCTURED_MIN_RATIO = float(os.environ.get("SCA_STRUCTURED_MIN_RATIO", 0.8))
 
@@ -490,6 +504,31 @@ def _build_segments(raw: list[dict],
     return segments
 
 
+def speech_coverage(segments: list[TranscriptSegment], duration_seconds: Optional[float],
+                    word_count: int) -> tuple[Optional[float], Optional[float]]:
+    """(share of the recording inside a transcribed turn, words per minute).
+
+    None when there are no timings or no duration - a pasted transcript has
+    nothing to measure against. Overlapping turns are counted once.
+    """
+    if not duration_seconds or duration_seconds <= 0:
+        return None, None
+    spans = sorted((float(s.start), float(s.end)) for s in segments
+                   if s.start is not None and s.end is not None and s.end > s.start)
+    if not spans:
+        return None, None
+    covered, cur_start, cur_end = 0.0, spans[0][0], spans[0][1]
+    for start, end in spans[1:]:
+        if start > cur_end:
+            covered += cur_end - cur_start
+            cur_start, cur_end = start, end
+        else:
+            cur_end = max(cur_end, end)
+    covered += cur_end - cur_start
+    return (round(min(covered / duration_seconds, 1.0), 4),
+            round(word_count / (duration_seconds / 60.0), 1))
+
+
 def _assemble(segments: list[TranscriptSegment], *, source: str,
               language: Optional[str], language_detected: Optional[str],
               duration_seconds: Optional[float]) -> NormalizedTranscript:
@@ -535,6 +574,12 @@ def _assemble(segments: list[TranscriptSegment], *, source: str,
         ends = [s.end for s in segments if s.end is not None]
         duration_seconds = round(max(ends), 3) if ends else None
 
+    word_count = sum(len(s.text.split()) for s in segments)
+    coverage, words_per_minute = speech_coverage(segments, duration_seconds, word_count)
+    if (coverage is not None and coverage < MIN_SPEECH_COVERAGE
+            and (duration_seconds or 0) >= COVERAGE_MIN_DURATION_SECONDS):
+        warnings.append(WARN_LOW_COVERAGE)
+
     return NormalizedTranscript(
         source=source,
         language=language,
@@ -545,16 +590,96 @@ def _assemble(segments: list[TranscriptSegment], *, source: str,
         speaker_count=len(real_speakers),
         segment_count=len(segments),
         duration_seconds=duration_seconds,
-        word_count=sum(len(s.text.split()) for s in segments),
+        word_count=word_count,
         speakers=speakers,
         segments=segments,
         quality=TranscriptQuality(
             mean_confidence=mean_confidence,
             low_confidence_ratio=low_ratio,
+            speech_coverage=coverage,
+            words_per_minute=words_per_minute,
             usable=bool(segments),
             warnings=warnings,
         ),
     )
+
+
+def _overlap(spans_a, spans_b) -> float:
+    """Total seconds where two sorted lists of (start, end) overlap."""
+    i = j = 0
+    total = 0.0
+    while i < len(spans_a) and j < len(spans_b):
+        lo = max(spans_a[i][0], spans_b[j][0])
+        hi = min(spans_a[i][1], spans_b[j][1])
+        if hi > lo:
+            total += hi - lo
+        if spans_a[i][1] < spans_b[j][1]:
+            i += 1
+        else:
+            j += 1
+    return total
+
+
+def apply_vad(transcript: NormalizedTranscript,
+              regions: Optional[list[tuple[float, float]]]) -> NormalizedTranscript:
+    """Measure the transcript against where speech actually is.
+
+    speech_kept = detected speech that falls inside a transcribed turn, over all
+    detected speech. Unlike speech_coverage it is not fooled by hold music or a
+    long silence, so when it is available it decides low_speech_coverage.
+    """
+    if not regions:
+        return transcript
+    vad = sorted((float(a), float(b)) for a, b in regions if b > a)
+    speech = sum(b - a for a, b in vad)
+    turns: list[tuple[float, float]] = []
+    for a, b in sorted((float(s.start), float(s.end)) for s in transcript.segments
+                       if s.start is not None and s.end is not None and s.end > s.start):
+        if turns and a <= turns[-1][1]:
+            turns[-1] = (turns[-1][0], max(turns[-1][1], b))
+        else:
+            turns.append((a, b))
+    q = transcript.quality
+    q.vad_speech_seconds = round(speech, 2)
+    if speech <= 0:
+        return transcript
+    q.speech_kept = round(min(_overlap(vad, turns) / speech, 1.0), 4)
+    long_enough = (transcript.duration_seconds or 0) >= COVERAGE_MIN_DURATION_SECONDS
+    low = long_enough and q.speech_kept < MIN_SPEECH_KEPT
+    if low and WARN_LOW_COVERAGE not in q.warnings:
+        q.warnings.append(WARN_LOW_COVERAGE)
+    elif not low and WARN_LOW_COVERAGE in q.warnings:
+        # The recording-length measure fired on silence the VAD can see past.
+        q.warnings.remove(WARN_LOW_COVERAGE)
+    return transcript
+
+
+def replace_segment_texts(transcript: NormalizedTranscript, texts: dict[int, str],
+                          source: str) -> NormalizedTranscript:
+    """Swap in new words for some segments, keeping index, speaker and timing.
+
+    The original text is kept on the segment. Word counts are recomputed; talk
+    time is unchanged because the timing is.
+    """
+    by_index = {s.index: s for s in transcript.segments}
+    for index, text in texts.items():
+        seg = by_index.get(index)
+        if seg is None or not text:
+            continue
+        if seg.text_original is None:
+            seg.text_original = seg.text
+        seg.text = text
+        seg.text_source = source
+    words: dict[str, int] = {}
+    for seg in transcript.segments:
+        words[seg.speaker_id] = words.get(seg.speaker_id, 0) + len(seg.text.split())
+    for speaker in transcript.speakers:
+        speaker.word_count = words.get(speaker.speaker_id, 0)
+    transcript.word_count = sum(words.values())
+    if transcript.quality.words_per_minute is not None and transcript.duration_seconds:
+        transcript.quality.words_per_minute = round(
+            transcript.word_count / (transcript.duration_seconds / 60.0), 1)
+    return transcript
 
 
 def clear_role_annotations(transcript: NormalizedTranscript) -> NormalizedTranscript:

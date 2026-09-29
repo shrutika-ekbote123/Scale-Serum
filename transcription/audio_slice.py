@@ -39,6 +39,9 @@ logger = logging.getLogger("transcription.audio_slice")
 WINDOW_START_SECONDS = float(os.environ.get("SCA_LANGUAGE_ID_WINDOW_START", 20))
 WINDOW_SECONDS = float(os.environ.get("SCA_LANGUAGE_ID_WINDOW_SECONDS", 180))
 FFMPEG_TIMEOUT_SECONDS = float(os.environ.get("SCA_FFMPEG_TIMEOUT_SECONDS", 60))
+# Below this an MP3 holds no speech worth identifying: 16 kHz mono speech MP3
+# is roughly 3-4 KB a second, and an empty one is a 44-byte header.
+MIN_WINDOW_BYTES = 1024
 
 
 def ffmpeg_path() -> Optional[str]:
@@ -64,8 +67,8 @@ async def window(audio: bytes, *, start: Optional[float] = None,
     Mono 16 kHz because this is heard by a language identifier, not a human:
     it is what speech models want and it keeps the payload small.
 
-    A call shorter than the window start still yields nothing rather than an
-    error - ffmpeg returns an empty stream and the caller degrades.
+    A call shorter than the window start yields None rather than an error, and
+    the caller degrades to sending the whole (short) file.
     """
     binary = ffmpeg_path()
     if not binary:
@@ -108,4 +111,65 @@ async def window(audio: bytes, *, start: Optional[float] = None,
         logger.warning("ffmpeg produced no window (exit=%s, %d bytes of stderr)",
                        process.returncode, len(err or b""))
         return None
+    if len(out) < MIN_WINDOW_BYTES:
+        # Past the end of a short recording ffmpeg does NOT return an empty
+        # stream: it writes a 44-byte ID3 header with no audio. Sent on, Gemini
+        # answers with a server error and detection silently fails for every
+        # call under WINDOW_START_SECONDS. Measured 2026-09-28 on 216 clips.
+        logger.info("audio window is empty (%d bytes); the recording is shorter "
+                    "than the window start", len(out))
+        return None
     return out
+
+
+async def decode(audio: bytes, *, channels: int = 1,
+                 timeout: Optional[float] = None):
+    """16 kHz float32 samples, shape (n, channels), or None if not decodable.
+
+    For speaker embeddings and voice activity, which need the waveform rather
+    than a file. int16 on the wire and float32 here: a 10-minute call is ~38 MB.
+    """
+    import numpy as np
+
+    binary = ffmpeg_path()
+    if not binary or not audio:
+        return None
+    args = [binary, "-v", "error", "-nostdin", "-i", "pipe:0",
+            "-ac", str(channels), "-ar", "16000", "-f", "s16le", "pipe:1"]
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *args, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE)
+        out, _err = await asyncio.wait_for(
+            process.communicate(input=audio),
+            timeout=(FFMPEG_TIMEOUT_SECONDS * 3) if timeout is None else timeout)
+    except Exception as err:  # noqa: BLE001 - decoding is never fatal
+        logger.warning("ffmpeg could not decode the recording: %s", type(err).__name__)
+        return None
+    if process.returncode != 0 or not out:
+        return None
+    samples = np.frombuffer(out, np.int16).astype(np.float32) / 32768.0
+    return samples.reshape(-1, channels)
+
+
+async def channel_count(audio: bytes) -> Optional[int]:
+    """Audio channels in the file, by ffprobe. None when it cannot tell."""
+    binary = ffmpeg_path()
+    if not binary or not audio:
+        return None
+    probe = os.path.join(os.path.dirname(binary), "ffprobe" + (".exe" if os.name == "nt" else ""))
+    if not os.path.isfile(probe):
+        probe = shutil.which("ffprobe")
+    if not probe:
+        return None
+    try:
+        process = await asyncio.create_subprocess_exec(
+            probe, "-v", "error", "-select_streams", "a:0", "-show_entries",
+            "stream=channels", "-of", "csv=p=0", "pipe:0",
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE)
+        out, _ = await asyncio.wait_for(process.communicate(input=audio),
+                                        timeout=FFMPEG_TIMEOUT_SECONDS)
+        return int(out.decode().strip().split(",")[0])
+    except Exception:  # noqa: BLE001
+        return None

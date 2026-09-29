@@ -78,6 +78,7 @@ ROLE_BASIS_CUSTOMER_NAME = "crm_customer_name_match"
 ROLE_BASIS_CUSTOMER_ADDRESSED = "crm_customer_name_addressed"
 ROLE_BASIS_ELIMINATION = "single_other_speaker_by_elimination"
 ROLE_BASIS_SUPPLIED = "supplied_by_caller"
+ROLE_BASIS_VOICE_MATCH = "rep_voiceprint_match"     # the enrolled rep's voice
 
 # Why the transcription ran in the language it did. Same idea as ROLE_BASIS_*:
 # a decision is only trustworthy if it says what it was based on.
@@ -171,6 +172,6 @@ __all__ = [
     "ROLE_SALES_REP", "ROLE_CUSTOMER", "ROLE_PARTICIPANT", "ROLE_UNKNOWN", "SPEAKER_ROLES",
     "ROLE_BASIS_UNRESOLVED", "ROLE_BASIS_REP_SELF_INTRO", "ROLE_BASIS_CUSTOMER_NAME",
     "ROLE_BASIS_CUSTOMER_ADDRESSED",
-    "ROLE_BASIS_ELIMINATION", "ROLE_BASIS_SUPPLIED",
+    "ROLE_BASIS_ELIMINATION", "ROLE_BASIS_SUPPLIED", "ROLE_BASIS_VOICE_MATCH",
     "REASON_TEXT", "ANALYZER_NAME", "ANALYZER_STATUS",
 ]

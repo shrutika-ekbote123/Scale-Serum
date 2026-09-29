@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Call Labeller</title>
+<!--
+  Correct a machine draft of a real sales call into a reference transcript.
+  Runs from disk (file://), no server, nothing leaves this machine.
+
+  1. Load workspace/labels/<id>.draft.json and the matching workspace/real/<id>.mp3
+  2. Set a role for each voice, fix turns (split where two people were merged),
+     fix words, set each turn's language and any clear tone.
+  3. Tick "I listened to the whole call", then Save. Put the file in
+     workspace/labels/ as <id>.json. Only reviewed files are scored.
+-->
+<style>
+  :root { --bg:#fbfaf8; --fg:#1d1d1b; --muted:#6b6a66; --line:#e3e1dc; --card:#fff;
+          --rep:#2f6fdf; --cust:#c2410c; --part:#6b7280; --accent:#0f766e; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#161615; --fg:#ecebe8; --muted:#a19f99; --line:#34332f; --card:#1f1f1d;
+            --rep:#7aa7ff; --cust:#fb923c; --part:#9ca3af; --accent:#2dd4bf; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { position:sticky; top:0; z-index:2; background:var(--bg); border-bottom:1px solid var(--line);
+           padding:12px 16px; display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+  h1 { font-size:16px; margin:0 12px 0 0; }
+  label.file { font-size:13px; color:var(--muted); }
+  audio { width:min(520px, 100%); }
+  main { max-width:1100px; margin:0 auto; padding:16px; }
+  .speakers { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+  .chip { border:1px solid var(--line); background:var(--card); border-radius:8px; padding:6px 10px; }
+  .turn { display:grid; grid-template-columns: 120px 1fr; gap:10px; background:var(--card);
+          border:1px solid var(--line); border-left:4px solid var(--part); border-radius:8px;
+          padding:10px; margin-bottom:8px; }
+  .turn.rep { border-left-color:var(--rep); } .turn.customer { border-left-color:var(--cust); }
+  .turn.playing { outline:2px solid var(--accent); }
+  .meta { display:flex; flex-direction:column; gap:6px; font-size:12px; color:var(--muted); }
+  .meta input { width:100%; font:inherit; padding:2px 4px; }
+  textarea { width:100%; min-height:48px; font:15px/1.5 inherit; resize:vertical; padding:6px;
+             border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
+  select, button { font:inherit; font-size:12px; }
+  button { cursor:pointer; border:1px solid var(--line); background:var(--card); color:var(--fg);
+           border-radius:6px; padding:3px 8px; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .row { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:6px; }
+  .tone label { font-size:12px; color:var(--muted); margin-right:6px; white-space:nowrap; }
+  footer { position:sticky; bottom:0; background:var(--bg); border-top:1px solid var(--line);
+           padding:10px 16px; display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+  .empty { color:var(--muted); padding:40px 0; text-align:center; }
+  @media (max-width:640px) { .turn { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Call Labeller</h1>
+  <label class="file">Draft JSON <input type="file" id="draftFile" accept=".json"></label>
+  <label class="file">Audio <input type="file" id="audioFile" accept="audio/*,video/mp4"></label>
+  <audio id="player" controls></audio>
+</header>
+<main>
+  <div id="speakers" class="speakers"></div>
+  <div id="turns"><p class="empty">Load a draft from workspace/labels/ and its audio from workspace/real/.</p></div>
+</main>
+<footer>
+  <label><input type="checkbox" id="reviewed"> I listened to the whole call and corrected it</label>
+  <button class="primary" id="save">Save</button>
+  <span id="status" style="color:var(--muted)"></span>
+</footer>
+<script>
+const LANGS = ["", "en", "hi", "mr", "kn", "pa", "ta", "te", "gu", "bn", "mixed"];
+const ROLES = ["", "rep", "customer", "participant"];
+const TONES = ["confidence", "hesitation", "frustration", "interest", "buying_intent", "urgency", "confusion"];
+let doc = null, stopAt = null;
+const player = document.getElementById("player");
+
+document.getElementById("draftFile").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  doc = JSON.parse(await f.text());
+  doc.speaker_roles = doc.speaker_roles || {};
+  render();
+};
+document.getElementById("audioFile").onchange = e => {
+  const f = e.target.files[0]; if (f) player.src = URL.createObjectURL(f);
+};
+player.ontimeupdate = () => {
+  if (stopAt !== null && player.currentTime >= stopAt) { player.pause(); stopAt = null; }
+  document.querySelectorAll(".turn").forEach(el => {
+    const t = doc.turns[+el.dataset.i];
+    el.classList.toggle("playing", t.start != null && player.currentTime >= t.start && player.currentTime < t.end);
+  });
+};
+
+function opt(values, current) {
+  return values.map(v => `<option value="${v}" ${v === current ? "selected" : ""}>${v || "—"}</option>`).join("");
+}
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+function render() {
+  const ids = [...new Set(doc.turns.map(t => t.speaker))];
+  document.getElementById("speakers").innerHTML = ids.map(id =>
+    `<span class="chip">${esc(id)} <select data-speaker="${esc(id)}">${opt(ROLES, doc.speaker_roles[id] || "")}</select></span>`
+  ).join("") + `<span class="chip" style="color:var(--muted)">rep: ${esc(doc.rep_name)} · customer: ${esc(doc.customer_name)}</span>`;
+  document.querySelectorAll("[data-speaker]").forEach(sel => sel.onchange = () => {
+    doc.speaker_roles[sel.dataset.speaker] = sel.value;
+    doc.turns.forEach(t => { if (t.speaker === sel.dataset.speaker) t.role = sel.value; });
+    render();
+  });
+
+  document.getElementById("turns").innerHTML = doc.turns.map((t, i) => `
+    <div class="turn ${esc(t.role)}" data-i="${i}">
+      <div class="meta">
+        <button data-act="play">▶ ${t.start?.toFixed(1)}–${t.end?.toFixed(1)}s</button>
+        <select data-f="speaker">${opt(ids, t.speaker)}</select>
+        <select data-f="role">${opt(ROLES, t.role)}</select>
+        <select data-f="lang">${opt(LANGS, t.lang)}</select>
+        <input data-f="start" value="${t.start ?? ""}" title="start (s)">
+        <input data-f="end" value="${t.end ?? ""}" title="end (s)">
+      </div>
+      <div>
+        <textarea data-f="text">${esc(t.text)}</textarea>
+        <div class="row tone">${TONES.map(k =>
+          `<label><input type="checkbox" data-tone="${k}" ${(t.tone || []).includes(k) ? "checked" : ""}>${k}</label>`).join("")}</div>
+        <div class="row">
+          <button data-act="split" title="Split at the text cursor; time is split in proportion">Split at cursor</button>
+          <button data-act="merge">Merge with next</button>
+          <button data-act="delete">Delete</button>
+        </div>
+      </div>
+    </div>`).join("");
+
+  document.querySelectorAll(".turn").forEach(el => {
+    const i = +el.dataset.i, t = doc.turns[i];
+    el.querySelectorAll("[data-f]").forEach(inp => inp.onchange = () => {
+      const f = inp.dataset.f;
+      t[f] = (f === "start" || f === "end") ? parseFloat(inp.value) : inp.value;
+      if (f === "speaker") t.role = doc.speaker_roles[inp.value] || t.role;
+      if (f === "speaker" || f === "role") render();
+    });
+    el.querySelectorAll("[data-tone]").forEach(cb => cb.onchange = () => {
+      t.tone = TONES.filter(k => el.querySelector(`[data-tone="${k}"]`).checked);
+    });
+    el.querySelector('[data-act="play"]').onclick = () => {
+      if (!player.src || t.start == null) return;
+      player.currentTime = t.start; stopAt = t.end; player.play();
+    };
+    el.querySelector('[data-act="split"]').onclick = () => {
+      const ta = el.querySelector("textarea"), pos = ta.selectionStart;
+      if (!pos || pos >= ta.value.length) return;
+      const frac = pos / ta.value.length, mid = +(t.start + (t.end - t.start) * frac).toFixed(2);
+      const second = {...t, text: ta.value.slice(pos).trim(), start: mid, tone: []};
+      t.text = ta.value.slice(0, pos).trim(); t.end = mid;
+      doc.turns.splice(i + 1, 0, second); render();
+    };
+    el.querySelector('[data-act="merge"]').onclick = () => {
+      const n = doc.turns[i + 1]; if (!n) return;
+      t.text = (t.text + " " + n.text).trim(); t.end = n.end;
+      t.tone = [...new Set([...(t.tone || []), ...(n.tone || [])])];
+      doc.turns.splice(i + 1, 1); render();
+    };
+    el.querySelector('[data-act="delete"]').onclick = () => {
+      if (confirm("Delete this turn?")) { doc.turns.splice(i, 1); render(); }
+    };
+  });
+}
+
+document.getElementById("save").onclick = () => {
+  if (!doc) return;
+  const reviewed = document.getElementById("reviewed").checked;
+  const missing = doc.turns.filter(t => !t.role).length;
+  if (reviewed && missing) { alert(`${missing} turn(s) have no role. Set every voice's role first.`); return; }
+  const out = {...doc, reviewed, labelled_at: new Date().toISOString()};
+  const name = reviewed ? `${doc.id}.json` : `${doc.id}.draft.json`;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 1)], {type: "application/json"}));
+  a.download = name; a.click();
+  document.getElementById("status").textContent =
+    `Saved ${name}. Move it into scripts/sca_eval/workspace/labels/.`;
+};
+</script>
+</body>
+</html>

@@ -119,3 +119,34 @@ benchmark candidate models. They are **evaluation inputs, not product
 components**: gitignored, never deployed, never redistributed, and absent
 from every artefact that reaches a customer.
 
+
+Sales Call Analyzer accuracy harness (`scripts/sca_eval/workspace/`), same rules:
+
+- **Google FLEURS** (test split, 8 Indian languages) — CC-BY-4.0,
+  huggingface.co/datasets/google/fleurs. Used only to measure transcription
+  accuracy per language.
+- **Synthetic calls** — dialogue written by Gemini and voiced by Gemini TTS, for
+  diarization and role ground truth. Evaluation input only.
+- **CREMA-D** (Cao et al., 2014) — Open Database License (ODbL) v1.0, via
+  huggingface.co/datasets/myleslinder/crema-d. 200 clips, used only to measure tone
+  detection. Not redistributed.
+
+## Sales Call Analyzer runtime additions
+
+- **RapidFuzz** — MIT. Edit distance for matching CRM names in transcripts.
+- **indic-transliteration** — MIT. Indic scripts to Latin, used only as a
+  matching key (`transcription/romanize.py`); transcripts are never rewritten.
+
+## Sales Call Analyzer voice components (Phase 1)
+
+Installed by `scripts/fetch_sca_models.py` into `SCA_MODEL_DIR`, pinned by SHA-256.
+Run server-side; nothing is distributed.
+
+- **sherpa-onnx** (k2-fsa) — Apache-2.0. Runs the models below on CPU.
+- **3D-Speaker ERes2Net speaker embedding** (`3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx`,
+  Alibaba 3D-Speaker) — Apache-2.0. Trained on VoxCeleb. Chosen by
+  `scripts/sca_eval/embedding_bakeoff.py` over WeSpeaker ResNet34, CAM++ and TitaNet-small.
+- **Silero VAD** (`silero_vad.onnx`) — MIT.
+
+Rep voiceprints produced with these are biometric data about employees: created
+only with consent recorded, stored as a vector (never audio), deletable on request.

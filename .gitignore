@@ -63,3 +63,7 @@ scripts/bakeoff/workspace/
 .models/
 # a generated work queue from evals/from_feedback.py, not source
 evals/candidates.jsonl
+
+# Sales Call Analyzer accuracy harness. Real customer recordings, their
+# transcripts and CRM names - never commit. The code is tracked; the workspace is not.
+scripts/sca_eval/workspace/
