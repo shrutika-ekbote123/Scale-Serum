@@ -228,6 +228,7 @@ def make_deps(store, cfg, *, llm_responses=None, transcribe=None):
         speaker_refine_mode=pl.SPEAKER_REFINE_OFF,
         segment_pass_mode=pl.SEGMENT_PASS_OFF,
         tone_mode=pl.TONE_OFF,
+        transcriber=pl.TRANSCRIBER_DEEPGRAM,
     )
     deps.extra["calls"] = calls
     return deps

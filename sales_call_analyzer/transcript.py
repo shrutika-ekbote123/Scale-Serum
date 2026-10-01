@@ -37,6 +37,9 @@ from .models import (
 
 # Sources, reported on the transcript so a reader knows what the analysis had.
 SOURCE_DEEPGRAM = "deepgram"
+SOURCE_SARVAM = "sarvam"
+# Transcripts made from the call audio, with turn timings.
+AUDIO_SOURCES = (SOURCE_DEEPGRAM, SOURCE_SARVAM)
 SOURCE_SUPPLIED_STRUCTURED = "supplied_structured"
 SOURCE_SUPPLIED_TEXT = "supplied_text"
 
@@ -529,6 +532,24 @@ def speech_coverage(segments: list[TranscriptSegment], duration_seconds: Optiona
             round(word_count / (duration_seconds / 60.0), 1))
 
 
+UNATTRIBUTED_LABEL = "Unattributed"
+
+
+def label_speakers(transcript: NormalizedTranscript) -> NormalizedTranscript:
+    """Number the speakers "Speaker 1", "Speaker 2"... in the order they first
+    speak, on the speakers and on every segment. Display only: it never changes
+    speaker_id or role, which is what scoring and coaching use. Idempotent."""
+    labels: dict[str, str] = {}
+    for seg in transcript.segments:
+        if seg.speaker_id not in labels:
+            labels[seg.speaker_id] = (UNATTRIBUTED_LABEL if seg.speaker_id == UNATTRIBUTED_SPEAKER_ID
+                                      else f"Speaker {sum(1 for k in labels if k != UNATTRIBUTED_SPEAKER_ID) + 1}")
+        seg.speaker_label = labels[seg.speaker_id]
+    for speaker in transcript.speakers:
+        speaker.label = labels.get(speaker.speaker_id)
+    return transcript
+
+
 def _assemble(segments: list[TranscriptSegment], *, source: str,
               language: Optional[str], language_detected: Optional[str],
               duration_seconds: Optional[float]) -> NormalizedTranscript:
@@ -580,7 +601,7 @@ def _assemble(segments: list[TranscriptSegment], *, source: str,
             and (duration_seconds or 0) >= COVERAGE_MIN_DURATION_SECONDS):
         warnings.append(WARN_LOW_COVERAGE)
 
-    return NormalizedTranscript(
+    return label_speakers(NormalizedTranscript(
         source=source,
         language=language,
         language_detected=language_detected,
@@ -601,7 +622,7 @@ def _assemble(segments: list[TranscriptSegment], *, source: str,
             usable=bool(segments),
             warnings=warnings,
         ),
-    )
+    ))
 
 
 def _overlap(spans_a, spans_b) -> float:

@@ -104,6 +104,7 @@ def verify_anchor(anchor: dict, segments_by_index: dict[int, Any],
     return Evidence(
         segment_index=segment.index,
         speaker_id=segment.speaker_id,               # from the transcript, not the model
+        speaker_label=segment.speaker_label,
         start=segment.start,
         end=segment.end,
         quote=quote,

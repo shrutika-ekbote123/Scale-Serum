@@ -68,6 +68,14 @@
     {
       "key": "voiceAudioUrl",
       "value": "{{audioUrl}}"
+    },
+    {
+      "key": "brandAnalysisId",
+      "value": ""
+    },
+    {
+      "key": "brandAudioUrl",
+      "value": "{{audioUrl}}"
     }
   ],
   "item": [
@@ -106,8 +114,12 @@
               "pm.test('speaker refinement reported', () => pm.expect(b.sales_call_analyzer.speaker_refinement).to.have.property('mode'));",
               "pm.test('segment pass reported', () => pm.expect(b.sales_call_analyzer.segment_pass).to.have.property('mode'));",
               "pm.test('tone step reported', () => pm.expect(b.sales_call_analyzer.tone).to.have.property('mode'));",
+              "pm.test('transcriber reported', () => pm.expect(['deepgram', 'sarvam']).to.include(b.sales_call_analyzer.transcriber.provider));",
               "if (b.sales_call_analyzer.transcription !== 'configured') {",
               "  console.warn('DEEPGRAM_API_KEY not set — audio requests will report transcription_not_configured');",
+              "}",
+              "if (b.sales_call_analyzer.transcriber.provider === 'sarvam' && b.sales_call_analyzer.transcriber.sarvam !== 'configured') {",
+              "  console.warn('SCA_TRANSCRIBER=sarvam but SARVAM_API_KEY is not set — every call will fall back to Deepgram');",
               "}"
             ]
           }
@@ -310,7 +322,7 @@
       ]
     },
     {
-      "name": "5. Submit — audio (Deepgram transcription + diarization)",
+      "name": "5. Submit — audio (transcription + diarization)",
       "request": {
         "method": "POST",
         "header": [
@@ -387,7 +399,13 @@
               "  return;",
               "}",
               "if (b.status !== 'completed') { console.log('Still running:', b.status); return; }",
-              "pm.test('transcribed by deepgram', () => pm.expect(b.transcript.source).to.eql('deepgram'));",
+              "pm.test('transcribed from audio (deepgram or sarvam)', () => pm.expect(['deepgram', 'sarvam']).to.include(b.transcript.source));",
+              "pm.test('lines labelled Speaker 1, Speaker 2...', () => pm.expect(b.transcript.segments[0].speaker_label).to.match(/^Speaker \\d+$/));",
+              "pm.test('every speaker has a label and a role', () => b.transcript.speakers.forEach(s => { pm.expect(s.label).to.be.a('string'); pm.expect(s.role).to.be.a('string'); }));",
+              "if (b.transcript.source === 'sarvam') {",
+              "  pm.test('sarvam billed, deepgram not', () => { pm.expect(b.processing.cost.sarvam.charged).to.be.true; pm.expect(b.processing.cost.deepgram.charged).to.be.false; });",
+              "  pm.test('sarvam cost in rupees', () => pm.expect(b.usage.cost.sarvam_inr).to.be.a('number'));",
+              "}",
               "pm.test('timings present', () => pm.expect(b.transcript.timestamps_available).to.be.true);",
               "pm.test('segments have real timings', () => pm.expect(b.transcript.segments[0].start).to.be.a('number'));",
               "pm.test('transcription timing recorded', () => pm.expect(b.processing.transcription_ms).to.be.a('number'));",
@@ -923,6 +941,93 @@
             "exec": [
               "pm.test('200', () => pm.response.to.have.status(200));",
               "pm.test('gone', () => pm.expect(pm.response.json().enrolled).to.be.false);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "20. Submit — audio with brand_name and product.terms (Sarvam clean-up)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"call_id\": \"postman_brand_{{$timestamp}}\",\n  \"audio\": {\n    \"url\": \"{{brandAudioUrl}}\"\n  },\n  \"call_metadata\": {\n    \"direction\": \"outbound\",\n    \"disposition\": \"MQL\",\n    \"remarks\": \"Recording uploaded by the rep\"\n  },\n  \"rep\": {\n    \"name\": \"Shruti\"\n  },\n  \"customer\": {\n    \"name\": \"Rupesh\"\n  },\n  \"product\": {\n    \"name\": \"Lawtorney AI\",\n    \"terms\": [\n      \"ChatGPT\",\n      \"trial version\",\n      \"refund\",\n      \"prompt book\"\n    ]\n  },\n  \"brand_name\": \"Lawtorney\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/sales-calls/analyze",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "sales-calls",
+            "analyze"
+          ]
+        },
+        "description": "IMPORTANT: `audioUrl` must be reachable by Deepgram over the public internet.\nA localhost path or a private bucket URL will fail with audio_unreachable.\n\nThe default is a short public sample. It is ONE speaker and is NOT a sales call,\nso expect a low score and many not-applicable criteria — that is correct\nbehaviour, and it proves the transcription and diarization path works.\n\nFor a meaningful score, replace `audioUrl` with a real two-party call recording\n(a signed URL from your storage is ideal)."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('queued', () => pm.expect(b.status).to.eql('queued'));",
+              "pm.test('brand_name and product.terms accepted', () => pm.expect(b.analysis_id).to.be.a('string'));",
+              "pm.collectionVariables.set('brandAnalysisId', b.analysis_id);",
+              "console.log('Poll with request 21. analysis_id =', b.analysis_id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "21. Poll — brand_name analysis (brand spelled right, speakers labelled)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/sales-calls/analysis/{{brandAnalysisId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "sales-calls",
+            "analysis",
+            "{{brandAnalysisId}}"
+          ]
+        },
+        "description": "Poll until completed. Watch status go transcribing -> analyzing -> scoring.\n\nCHECK BY EYE:\n- transcript.source = \"deepgram\", timestamps_available = true\n- transcript.segments have real start/end seconds — this is what lets the UI jump\n  the audio player to the moment behind a score\n- transcript.speakers shows the diarized speakers; roles stay \"unknown\" unless\n  someone is identifiable from the conversation\n- processing.transcription_ms and audio_seconds_submitted are populated\n\nWith the default single-speaker sample you should also see the warning\n\"single_speaker_detected\" — the system reports it rather than pretending."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "if (b.status === 'failed') { console.error('FAILED:', b.availability.reason); pm.test('no fabricated scores on failure', () => pm.expect(b.scores).to.be.null); return; }",
+              "if (b.status !== 'completed') { console.log('Still running:', b.status); return; }",
+              "pm.test('lines labelled Speaker N', () => b.transcript.segments.forEach(s => pm.expect(s.speaker_label).to.match(/^Speaker \\d+$|^Unattributed$/)));",
+              "pm.test('roles kept for scoring', () => pm.expect(b.transcript.speakers.map(s => s.role)).to.satisfy(r => r.every(x => ['sales_rep','customer','participant','unknown'].includes(x))));",
+              "if (b.transcript.source === 'sarvam') {",
+              "  pm.test('sarvam clean-up recorded', () => pm.expect(b.processing.sarvam.cleanup.counts).to.have.property('term_fixes'));",
+              "  pm.test('brand never misspelt as a known mishearing', () => pm.expect(b.transcript.segments.map(s => s.text).join(' ')).to.not.match(/Lot Earning|Law Attorney|lotany/i));",
+              "}",
+              "console.log('provider:', b.transcript.source, '| speakers:', JSON.stringify(b.transcript.speakers.map(s => [s.label, s.role])));"
             ]
           }
         }

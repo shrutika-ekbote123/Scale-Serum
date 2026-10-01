@@ -99,6 +99,10 @@ class ProductInfo(BaseModel):
     complexity: Optional[str] = None
     is_structured_programme: Optional[bool] = None   # drives the structured_programme requirement
     sold_on_call: Optional[bool] = None              # drives the payment_process requirement
+    # Words this product's calls use that a transcriber may mishear: feature and
+    # add-on names, competitor tools ("ChatGPT", "trial version", "prompt book").
+    # With Sarvam, a near-miss of one is re-checked against the audio.
+    terms: list[str] = Field(default_factory=list)
 
 
 class AnalyzeOptions(BaseModel):
@@ -115,6 +119,10 @@ class AnalyzeRequest(BaseModel):
     lead_id: Optional[str] = None
     brand_id: Optional[str] = None
     brand_brain_id: Optional[str] = None     # normally resolved from the lead
+    # Normally resolved from the lead. Supplied here when there is no lead to
+    # look it up from; the lead's brand wins when both exist. Used to fix the
+    # brand's spelling in a Sarvam transcript and to recognise "calling from X".
+    brand_name: Optional[str] = None
     audio: Optional[AudioRef] = None
     transcript: Optional[SuppliedTranscript] = None
     call_metadata: CallMetadata = Field(default_factory=CallMetadata)
@@ -139,6 +147,9 @@ class TranscriptSpeaker(BaseModel):
     name: Optional[str] = None             # only ever from CRM context, never invented
     role_basis: str = "unresolved"         # stable code explaining how the role was decided
     role_confidence: str = "none"          # high | medium | low | none
+    # What a person reads: "Speaker 1", "Speaker 2"... in the order they first
+    # speak. Display only - scoring and coaching use `role`.
+    label: Optional[str] = None
     talk_time_seconds: float = 0.0
     turn_count: int = 0
     word_count: int = 0
@@ -148,6 +159,7 @@ class TranscriptSegment(BaseModel):
     """One speaker turn. `index` is the anchor every piece of evidence cites."""
     index: int
     speaker_id: str
+    speaker_label: Optional[str] = None    # "Speaker 1" - see TranscriptSpeaker.label
     start: Optional[float] = None
     end: Optional[float] = None
     text: str = ""
@@ -227,7 +239,7 @@ class NormalizedTranscript(BaseModel):
     # How it was said (tone step). Kept with the transcript: it describes this
     # recording, so a reused transcript keeps it.
     voice: Optional[VoiceAnalysis] = None
-    source: str = "deepgram"          # deepgram | supplied_structured | supplied_text
+    source: str = "deepgram"          # deepgram | sarvam | supplied_structured | supplied_text
     language: Optional[str] = None
     language_detected: Optional[str] = None
     multilingual: bool = False
@@ -254,6 +266,7 @@ class Evidence(BaseModel):
     """
     segment_index: int
     speaker_id: Optional[str] = None
+    speaker_label: Optional[str] = None    # "Speaker 1", copied from the cited segment
     start: Optional[float] = None
     end: Optional[float] = None
     quote: str = ""
@@ -479,6 +492,13 @@ class ProcessingInfo(BaseModel):
     language_id_cached_tokens: Optional[int] = None
     # Segment pass: the customer's turns re-transcribed in their own language.
     # {mode, applied, language, segments, replaced, rejected, audio_seconds, ...}
+    # Sarvam transcription (SCA_TRANSCRIBER=sarvam): model, detected language,
+    # timing, the clean-up's changes and the Gemini re-check's. See
+    # transcription/sarvam_cleanup.py and sarvam_recheck.py.
+    sarvam: Optional[dict] = None
+    sarvam_recheck_input_tokens: Optional[int] = None
+    sarvam_recheck_output_tokens: Optional[int] = None
+    sarvam_recheck_thinking_tokens: Optional[int] = None
     segment_pass: Optional[dict] = None
     segment_pass_input_tokens: Optional[int] = None
     segment_pass_output_tokens: Optional[int] = None
@@ -521,7 +541,10 @@ class AudioUsage(BaseModel):
 class UsageCost(BaseModel):
     """The money, flattened. The full working stays in `processing.cost`."""
     deepgram_usd: Optional[float] = None
+    sarvam_usd: Optional[float] = None
+    sarvam_inr: Optional[float] = None        # Sarvam bills in rupees: the exact figure
     gemini_usd: Optional[float] = None
+    gemini_inr: Optional[float] = None
     total_usd: Optional[float] = None
     total_inr: Optional[float] = None
     usd_to_inr: Optional[float] = None

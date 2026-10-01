@@ -244,7 +244,17 @@ def build_usage(processing: ProcessingInfo) -> UsageBlock:
         total=_add(processing.tone_input_tokens, processing.tone_output_tokens,
                    processing.tone_thinking_tokens))
 
+    recheck = TokenUsage(
+        input=processing.sarvam_recheck_input_tokens,
+        output=processing.sarvam_recheck_output_tokens,
+        thinking=processing.sarvam_recheck_thinking_tokens,
+        total=_add(processing.sarvam_recheck_input_tokens,
+                   processing.sarvam_recheck_output_tokens,
+                   processing.sarvam_recheck_thinking_tokens))
+
     tokens: dict[str, Any] = {"analysis": analysis}
+    if recheck.total is not None:
+        tokens["sarvam_recheck"] = recheck
     if language.total is not None:
         tokens["language_id"] = language
     if segment.total is not None:
@@ -266,11 +276,16 @@ def build_usage(processing: ProcessingInfo) -> UsageBlock:
 
     return UsageBlock(
         tokens=tokens,
-        total_tokens=_add(analysis.total, language.total, segment.total, tone.total),
+        total_tokens=_add(analysis.total, language.total, segment.total, tone.total,
+                          recheck.total),
         audio=audio,
         cost=UsageCost(
             deepgram_usd=deepgram.usd if deepgram else None,
+            sarvam_usd=cost.sarvam.usd if cost and cost.sarvam.charged else None,
+            sarvam_inr=cost.sarvam.inr if cost and cost.sarvam.charged else None,
             gemini_usd=cost.gemini.usd if cost else None,
+            gemini_inr=(round(cost.gemini.usd * cost.usd_to_inr, 2)
+                        if cost and cost.gemini.usd is not None and cost.usd_to_inr else None),
             total_usd=cost.total_usd if cost else None,
             total_inr=cost.total_inr if cost else None,
             usd_to_inr=cost.usd_to_inr if cost else None,

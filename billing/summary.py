@@ -101,6 +101,8 @@ def summarize(docs: Iterable[dict], pricing: dict) -> dict:
               "backfilled": 0, "no_cost_data": 0}
     deepgram_total = {"provider": "deepgram", "runs_charged": 0, "audio_seconds": 0.0,
                       "billed_seconds": 0.0, "priced_usd_partial": 0.0, "unpriced": 0}
+    sarvam_total = {"provider": "sarvam", "runs_charged": 0, "audio_seconds": 0.0,
+                    "inr": 0.0, "priced_usd_partial": 0.0, "unpriced": 0}
     gemini_total = {"provider": "gemini", "runs_charged": 0, "attempts": 0, "input_tokens": 0,
                     "cached_tokens": 0, "output_tokens": 0, "thinking_tokens": 0,
                     "priced_usd_partial": 0.0, "unpriced": 0}
@@ -174,6 +176,14 @@ def summarize(docs: Iterable[dict], pricing: dict) -> dict:
                 channel_row["priced_usd_partial"] += dg.usd or 0.0
                 channel_row["unpriced"] += int(dg.usd is None)
 
+            sv = cost.sarvam
+            if sv.charged:
+                sarvam_total["runs_charged"] += 1
+                sarvam_total["audio_seconds"] += sv.audio_seconds or 0.0
+                sarvam_total["inr"] += sv.inr or 0.0
+                sarvam_total["priced_usd_partial"] += sv.usd or 0.0
+                sarvam_total["unpriced"] += int(sv.usd is None)
+
             gm = cost.gemini
             if gm.charged:
                 gemini_total["runs_charged"] += 1
@@ -197,9 +207,11 @@ def summarize(docs: Iterable[dict], pricing: dict) -> dict:
 
     any_unpriced = counts["unpriced"] > 0
     total_partial = round(total_partial, 6)
-    for block in (deepgram_total, gemini_total):
+    for block in (deepgram_total, gemini_total, sarvam_total):
         block["priced_usd_partial"] = round(block["priced_usd_partial"], 6)
         block["usd"] = None if block["unpriced"] else block["priced_usd_partial"]
+    sarvam_total["audio_seconds"] = round(sarvam_total["audio_seconds"], 3)
+    sarvam_total["inr"] = round(sarvam_total["inr"], 2)
     deepgram_total["audio_seconds"] = round(deepgram_total["audio_seconds"], 3)
     deepgram_total["billed_seconds"] = round(deepgram_total["billed_seconds"], 3)
     deepgram_total["billed_minutes"] = round(deepgram_total["billed_seconds"] / 60, 2)
@@ -239,7 +251,8 @@ def summarize(docs: Iterable[dict], pricing: dict) -> dict:
             "total": gemini_total["total_tokens"],
         },
         "per_analysis": _per_analysis(counts, total_partial, gemini_total, deepgram_total),
-        "by_provider": [deepgram_total, gemini_total],
+        "by_provider": [deepgram_total, gemini_total]
+                       + ([sarvam_total] if sarvam_total["runs_charged"] else []),
         "by_model": model_rows,
         "by_billed_channels": channel_rows,
         "counts": counts,

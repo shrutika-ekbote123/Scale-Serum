@@ -35,6 +35,7 @@ import billing
 from transcription import audio_slice as _audio_slice
 from transcription import deepgram_client as _dg_client
 from transcription import language_id as _language_id
+from transcription import sarvam_cleanup as _sarvam_cleanup
 from transcription import segment_transcribe as _segment
 from transcription import voice as _voice
 
@@ -143,6 +144,15 @@ class PipelineDeps:
     classify_tone: Optional[Callable[..., Awaitable[Any]]] = None
     tone_mode: Optional[str] = None
     tone_model: Optional[str] = None
+    # Which provider transcribes audio: "deepgram" (default) or "sarvam".
+    transcriber: Optional[str] = None
+    # (audio bytes, filename=) -> transcription.sarvam_client.SarvamResult
+    sarvam_transcribe: Optional[Callable[..., Awaitable[Any]]] = None
+    # (samples, entries, indices, terms, brand_terms) -> sarvam_recheck.RecheckResult
+    sarvam_recheck: Optional[Callable[..., Awaitable[Any]]] = None
+    sarvam_model: Optional[str] = None
+    sarvam_recheck_mode: Optional[str] = None
+    sarvam_voiceprint_mode: Optional[str] = None
     extra: dict = field(default_factory=dict)
 
 
@@ -650,6 +660,176 @@ async def _tone_pass(transcript: NormalizedTranscript, request: AnalyzeRequest,
     info["applied"] = True
 
 
+# =========================================================================== #
+# Sarvam (SCA_TRANSCRIBER=sarvam)
+# =========================================================================== #
+# Measured against the current pipeline (scripts/sca_eval/README.md, 2026-09-30):
+# on 19 calls with exact truth Sarvam put 95% of words on the right role (Deepgram
+# + our refinement: 75%) and wrote regional languages far better (FLEURS: 7 of 8
+# languages better). Its weaknesses - echoed fragments, stray scripts, misheard
+# brand and product names - are fixed by transcription/sarvam_cleanup.py, and
+# the few turns it cannot fix from text are re-checked by Gemini
+# (sarvam_recheck.py). With Sarvam:
+#   * no Gemini language identification: Sarvam detects the language itself
+#   * no segment pass: Sarvam already writes the regional language
+#   * no re-splitting of speakers (diarization.refine): Sarvam's speakers are
+#     better, and it gives no word timings to split on. The rep's voiceprint is
+#     still matched, to say which speaker the rep is.
+# If Sarvam fails (not configured, no credits, outage), the call falls back to
+# Deepgram and processing.sarvam says why.
+TRANSCRIBER_DEEPGRAM = "deepgram"
+TRANSCRIBER_SARVAM = "sarvam"
+TRANSCRIBER = os.environ.get("SCA_TRANSCRIBER", TRANSCRIBER_DEEPGRAM).strip().lower()
+# on | off. The Gemini re-check of flagged turns (~Rs 0.2-0.6 a call when any).
+SARVAM_RECHECK_MODE = os.environ.get("SCA_SARVAM_RECHECK", "on").strip().lower()
+# on | off. Matching the rep's enrolled voiceprint to a Sarvam speaker. Only
+# labels a speaker, never moves words, so it does not wait on SCA_SPEAKER_REFINE.
+SARVAM_VOICEPRINT_MODE = os.environ.get("SCA_SARVAM_VOICEPRINT", "on").strip().lower()
+
+LANGUAGE_BASIS_TRANSCRIBER = "detected_by_transcriber"
+REASON_TRANSCRIBED_BY_SARVAM = "transcribed_by_sarvam_no_deepgram_charge"
+REASON_SARVAM_NOT_CONFIGURED = "sarvam_not_configured"
+
+
+def _transcriber(deps: PipelineDeps) -> str:
+    return (deps.transcriber or TRANSCRIBER or TRANSCRIBER_DEEPGRAM).strip().lower()
+
+
+def sarvam_terms(request: AnalyzeRequest, brand_name: Optional[str] = None) -> list[str]:
+    """Brand and product names the clean-up writes correctly. Never people's
+    names: the CRM's are often placeholders, and a wrong one written into the
+    transcript would be worse than a misspelt right one."""
+    return [t for t in dict.fromkeys([brand_name, request.product.name]) if t and t.strip()]
+
+
+async def _transcribe_with_sarvam(request: AnalyzeRequest, deps: PipelineDeps,
+                                  processing: ProcessingInfo, box: dict, analysis_id: str,
+                                  brand_name: Optional[str]) -> Optional[tuple[dict, Optional[str]]]:
+    """(Deepgram-shaped response, language code) from Sarvam, cleaned and
+    re-checked; None when Sarvam could not be used. Never raises."""
+    info: dict = {"model": deps.sarvam_model, "applied": False}
+    processing.sarvam = info
+    if deps.sarvam_transcribe is None:
+        info["reason"] = REASON_SARVAM_NOT_CONFIGURED
+        return None
+    audio = await _audio_bytes(request, deps, box, analysis_id)
+    if audio is None:
+        info["reason"] = REASON_REFINE_AUDIO_UNAVAILABLE
+        return None
+    filename = os.path.basename((request.audio.url or "").split("?")[0]) or "call.mp3"
+    try:
+        result = await deps.sarvam_transcribe(audio, filename=filename)
+    except Exception as err:  # noqa: BLE001 - the client never raises; belt and braces
+        logger.warning("Sarvam failed [analysis_id=%s]: %s", analysis_id, type(err).__name__)
+        info["reason"] = "sarvam_provider_error"
+        return None
+    info["ms"] = result.ms
+    if not result.ok:
+        info.update({"reason": result.reason, "error": result.error})
+        logger.warning("Sarvam failed [analysis_id=%s]: %s", analysis_id, result.reason)
+        return None
+    response = result.response or {}
+    info["model"] = result.model
+    info["mode"] = result.mode
+    info["language_code"] = response.get("language_code")
+
+    terms = sarvam_terms(request, brand_name)
+    vocabulary = list(request.product.terms or [])
+    cleaned = _sarvam_cleanup.clean(response, terms, vocabulary)
+    report = cleaned.report()
+    info["cleanup"] = {k: report[k] for k in ("counts", "duplicates_removed", "script_fixes",
+                                              "term_fixes", "suspects")}
+
+    samples = None
+    try:
+        decoded = await _audio_slice.decode(audio)
+        if decoded is not None and len(decoded):
+            samples = box["samples"] = decoded[:, 0]
+    except Exception:  # noqa: BLE001 - only the re-check and the voice steps need it
+        samples = None
+
+    mode = (deps.sarvam_recheck_mode or SARVAM_RECHECK_MODE).strip().lower()
+    if cleaned.suspect_indices:
+        if mode != "on":
+            info["recheck"] = {"reason": "off"}
+        elif deps.sarvam_recheck is None or samples is None:
+            info["recheck"] = {"reason": "not_configured" if deps.sarvam_recheck is None
+                               else REASON_REFINE_AUDIO_UNAVAILABLE}
+        else:
+            try:
+                done = await deps.sarvam_recheck(samples, cleaned.entries, cleaned.suspect_indices,
+                                                 terms + vocabulary, terms)
+            except Exception as err:  # noqa: BLE001 - an optional step never fails the call
+                logger.warning("Sarvam re-check failed [analysis_id=%s]: %s",
+                               analysis_id, type(err).__name__)
+                info["recheck"] = {"reason": "recheck_error", "error": type(err).__name__}
+            else:
+                info["recheck"] = done.report()
+                processing.sarvam_recheck_input_tokens = done.input_tokens
+                processing.sarvam_recheck_output_tokens = done.output_tokens
+                processing.sarvam_recheck_thinking_tokens = done.thinking_tokens
+
+    raw = _sarvam_cleanup.to_deepgram_shape(cleaned.entries)
+    if samples is not None:
+        raw["metadata"]["duration"] = round(len(samples) / 16000, 3)
+    raw["metadata"]["provider"] = TRANSCRIBER_SARVAM
+    await deps.store.save_raw_transcript(analysis_id, response,
+                                         enabled=(request.options.store_raw_transcript
+                                                  if request.options.store_raw_transcript is not None
+                                                  else deps.store_raw_transcript))
+    code = (response.get("language_code") or "").split("-")[0].lower() or None
+    processing.transcription_provider = TRANSCRIBER_SARVAM
+    processing.transcription_model = result.model
+    processing.transcription_language_sent = None
+    processing.language_basis = LANGUAGE_BASIS_TRANSCRIBER
+    processing.language_detected = code if code and code != "en" else None
+    info["applied"] = True
+    return raw, code
+
+
+async def _sarvam_rep_voice(raw: dict, request: AnalyzeRequest, deps: PipelineDeps,
+                            processing: ProcessingInfo, box: dict,
+                            analysis_id: str) -> Optional[dict]:
+    """Which Sarvam speaker is the rep, by the rep's enrolled voiceprint. Never raises."""
+    mode = (deps.sarvam_voiceprint_mode or SARVAM_VOICEPRINT_MODE).strip().lower()
+    samples = box.get("samples")
+    if mode != "on" or not request.rep.id or deps.load_voiceprint is None or samples is None:
+        return None
+    embed, model = deps.embed_voice, deps.voice_model
+    if embed is None:
+        usable, why = _voice.availability()
+        if not usable:
+            processing.speaker_refinement = {"transcriber": TRANSCRIBER_SARVAM, "reason": why}
+            return None
+        embed, model = _voice.embed, _voice.model_id()
+    try:
+        voiceprint = await deps.load_voiceprint(request.rep.id)
+    except Exception as err:  # noqa: BLE001 - a missing voiceprint is not an error
+        logger.warning("voiceprint lookup failed [analysis_id=%s]: %s",
+                       analysis_id, type(err).__name__)
+        voiceprint = None
+    info: dict = {"transcriber": TRANSCRIBER_SARVAM, "model": model,
+                  "voiceprint_used": voiceprint is not None}
+    processing.speaker_refinement = info
+    if voiceprint is None:
+        return None
+    try:
+        scores = await asyncio.to_thread(diarization_mod.score_speakers, raw, samples,
+                                         embed, voiceprint)
+    except Exception as err:  # noqa: BLE001
+        logger.warning("voiceprint match failed [analysis_id=%s]: %s",
+                       analysis_id, type(err).__name__)
+        info["reason"] = diarization_mod.REASON_ERROR
+        return None
+    info["voice_scores"] = scores
+    best = max(scores, key=scores.get, default=None)
+    if best is None or scores[best] < diarization_mod.REP_MATCH_AT:
+        info["reason"] = "no_speaker_matches_the_voiceprint"
+        return None
+    info["rep_speaker_id"] = best
+    return {"rep_id": request.rep.id, "speaker_id": best, "score": scores[best], "model": model}
+
+
 def transcription_keyterms(request: AnalyzeRequest,
                            brand_name: Optional[str] = None) -> list[str]:
     """Names Deepgram should expect: brand, product, rep, customer.
@@ -679,11 +859,20 @@ async def resolve_transcript(request: AnalyzeRequest, deps: PipelineDeps,
     A transcript already produced for this call short-circuits everything: an
     earlier attempt that died at the LLM step has already paid for it.
     """
+    # A transcript made by the other provider is not reused: switching
+    # SCA_TRANSCRIBER is a request for that provider's transcript.
+    made_by = (stored or {}).get("source")
+    if (stored and made_by in (TRANSCRIBER_DEEPGRAM, TRANSCRIBER_SARVAM)
+            and transcript_mod.has_audio(request.audio) and made_by != _transcriber(deps)):
+        logger.info("stored transcript is from %s, not %s; transcribing again [analysis_id=%s]",
+                    made_by, _transcriber(deps), analysis_id)
+        stored = None
     if stored:
         logger.info("reusing stored transcript [analysis_id=%s]", analysis_id)
         # Reuse the transcription, never the role resolution: the CRM names in
         # THIS request may differ from the ones the earlier run had.
-        return (transcript_mod.clear_role_annotations(NormalizedTranscript(**stored)),
+        return (transcript_mod.label_speakers(
+                    transcript_mod.clear_role_annotations(NormalizedTranscript(**stored))),
                 STRATEGY_REUSED)
 
     strategy, _why = transcript_mod.select_input_strategy(request.audio, request.transcript)
@@ -702,6 +891,22 @@ async def resolve_transcript(request: AnalyzeRequest, deps: PipelineDeps,
     await deps.store.set_status(analysis_id, STATUS_TRANSCRIBING)
     processing = processing if processing is not None else ProcessingInfo()
     box = {} if box is None else box
+
+    if _transcriber(deps) == TRANSCRIBER_SARVAM:
+        got = await _transcribe_with_sarvam(request, deps, processing, box, analysis_id,
+                                            brand_name)
+        if got is not None:
+            raw, code = got
+            rep_voice = await _sarvam_rep_voice(raw, request, deps, processing, box, analysis_id)
+            transcript = transcript_mod.from_deepgram(raw, language_hint=code)
+            transcript.source = transcript_mod.SOURCE_SARVAM
+            transcript.rep_voice = rep_voice
+            return transcript, strategy
+        processing.sarvam["fallback"] = TRANSCRIBER_DEEPGRAM
+        processing.transcription_provider = TRANSCRIBER_DEEPGRAM
+        logger.warning("Sarvam unavailable (%s); transcribing with Deepgram [analysis_id=%s]",
+                       processing.sarvam.get("reason"), analysis_id)
+
     language = await _decide_language(request, deps, processing, analysis_id, box)
     # What was actually sent, which is what billing prices: multi is charged at
     # the multilingual rate.
@@ -788,6 +993,22 @@ def _attach_cost(processing: ProcessingInfo, failure_reason: Optional[str] = Non
         pricing = billing.load_pricing()
         outcome, reason = _transcription_outcome(processing, failure_reason)
         at = processing.started_at
+        # Sarvam transcribed it: Sarvam is billed for the audio, Deepgram is not.
+        sarvam = None
+        if processing.transcription_provider == TRANSCRIBER_SARVAM:
+            sarvam = billing.sarvam_cost(
+                pricing, outcome=outcome, reason=reason, model=processing.transcription_model,
+                audio_seconds=processing.audio_seconds_submitted, at=at)
+            outcome, reason = billing.NOT_CHARGED, REASON_TRANSCRIBED_BY_SARVAM
+        elif processing.sarvam:
+            # Tried and fell back to Deepgram. A refused job (no credits, not
+            # configured) is not billed; an error after upload may have been.
+            failed = processing.sarvam.get("reason") == "sarvam_provider_error"
+            sarvam = billing.sarvam_cost(
+                pricing, outcome=billing.CHARGE_UNKNOWN if failed else billing.NOT_CHARGED,
+                reason=processing.sarvam.get("reason"), model=processing.sarvam.get("model"),
+                audio_seconds=None, at=at)
+        recheck_requests = int(((processing.sarvam or {}).get("recheck") or {}).get("requests") or 0)
         deepgram = billing.deepgram_cost(
             pricing, outcome=outcome, reason=reason,
             model=processing.transcription_model,
@@ -807,24 +1028,28 @@ def _attach_cost(processing: ProcessingInfo, failure_reason: Optional[str] = Non
             model_version=processing.llm_model_version,
             attempts=(processing.llm_attempts + (1 if processing.language_detection_ms else 0)
                       + int((processing.segment_pass or {}).get("requests") or 0)
-                      + int((processing.tone or {}).get("requests") or 0)),
+                      + int((processing.tone or {}).get("requests") or 0)
+                      + recheck_requests),
             input_tokens=_total(processing.llm_input_tokens,
                                 processing.language_id_input_tokens,
                                 processing.segment_pass_input_tokens,
-                                processing.tone_input_tokens),
+                                processing.tone_input_tokens,
+                                processing.sarvam_recheck_input_tokens),
             output_tokens=_total(processing.llm_output_tokens,
                                  processing.language_id_output_tokens,
                                  processing.segment_pass_output_tokens,
-                                 processing.tone_output_tokens),
+                                 processing.tone_output_tokens,
+                                 processing.sarvam_recheck_output_tokens),
             thinking_tokens=_total(processing.llm_thinking_tokens,
                                    processing.language_id_thinking_tokens,
                                    processing.segment_pass_thinking_tokens,
-                                   processing.tone_thinking_tokens),
+                                   processing.tone_thinking_tokens,
+                                   processing.sarvam_recheck_thinking_tokens),
             cached_tokens=_total(processing.llm_cached_tokens,
                                  processing.language_id_cached_tokens,
                                  processing.segment_pass_cached_tokens), at=at)
         processing.billed_channels = deepgram.billed_channels
-        processing.cost = billing.combine(pricing, deepgram, gemini, at=at)
+        processing.cost = billing.combine(pricing, deepgram, gemini, at=at, sarvam=sarvam)
     except Exception:  # noqa: BLE001 - a pricing bug must never fail an analysis
         logger.exception("cost estimate failed; the analysis continues without one")
         processing.cost = None
@@ -881,6 +1106,9 @@ async def _run(analysis_id: str, request: AnalyzeRequest, deps: PipelineDeps,
                 logger.warning("brand ref lookup failed [analysis_id=%s]: %s",
                                analysis_id, type(err).__name__)
 
+        if not brand_ref.get("brand_name") and request.brand_name:
+            brand_ref = {**brand_ref, "brand_name": request.brand_name}
+
         stored = await deps.store.stored_transcript(request.call_id)
         t0 = time.monotonic()
         # The recording, fetched once and shared by language identification,
@@ -896,7 +1124,8 @@ async def _run(analysis_id: str, request: AnalyzeRequest, deps: PipelineDeps,
             processing.audio_seconds_submitted = (
                 transcript.duration_seconds
                 if strategy == transcript_mod.STRATEGY_TRANSCRIBE_AUDIO else None)
-        if strategy == transcript_mod.STRATEGY_TRANSCRIBE_AUDIO:
+        sarvam_used = processing.transcription_provider == TRANSCRIBER_SARVAM
+        if strategy == transcript_mod.STRATEGY_TRANSCRIBE_AUDIO and not sarvam_used:
             processing.channels_processed = transcript.channels_processed
             processing.multichannel_requested = _dg_client.MULTICHANNEL
 
@@ -915,7 +1144,8 @@ async def _run(analysis_id: str, request: AnalyzeRequest, deps: PipelineDeps,
 
         # ---- 2b. the customer's words, in their own language ----------------
         # Only on a fresh transcription: a reused transcript already has them.
-        if strategy == transcript_mod.STRATEGY_TRANSCRIBE_AUDIO:
+        # Not after Sarvam, which already writes the customer's language.
+        if strategy == transcript_mod.STRATEGY_TRANSCRIBE_AUDIO and not sarvam_used:
             if await _segment_pass(transcript, request, deps, processing, box, analysis_id,
                                    brand_name=brand_ref.get("brand_name")):
                 # New words can carry the name evidence that was garbled before.

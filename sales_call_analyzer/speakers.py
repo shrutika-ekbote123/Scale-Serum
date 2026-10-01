@@ -86,8 +86,18 @@ _LOOSE_SELF_INTRO = (
     r"(?:mera nam|mera naam|mera name|main|mai|mi|myself)\s+(?:" + _HONORIFIC + r")?{name}\b",
     r"\b{name}\s+(?:bol raha|bol rahi|bol rha|bol rhi|baat kar raha|baat kar rahi|bolat)",
 )
-_LOOSE_ORG_INTRO = (r"\b{name}\s+(?:se|ki taraf se|ke taraf se|kadun|kadoon|madhun)\b",)
-_LOOSE_ADDRESSES = (r"\b{name}\s+(?:ji|sir|saab|sahab|madam)\b",)
+_LOOSE_ORG_INTRO = (
+    r"\b{name}\s+(?:se|ki taraf se|ke taraf se|kadun|kadoon|madhun)\b",
+    # "from" in Malayalam (നിന്ന് ninn), Tamil (இருந்து iruntu) and Telugu (నుండి
+    # nundi), after an optional case ending written on the name: "ABC
+    # Institute-ൽ നിന്ന്", "ABC Institute-ல இருந்து" (mycall2, mycall5).
+    r"\b{name}\s+(?:\S{{1,3}}\s+)?(?:ninn|ninnu|ninnum|iruntu|irundu|irunthu|nundi|ninci|ninda)\b",
+)
+# Honorifics after a name: Hindi ji, Telugu garu (గారు), Kannada avare, Tamil
+# avargal - after the first name, or after first name + surname ("Shubhajeet
+# Mondal గారు", mycall6).
+_LOOSE_ADDRESSES = (r"\b{name}\s+(?:[a-z]+\s+)?"
+                    r"(?:ji|sir|saab|sahab|madam|garu|gaaru|avare|avaru|avargal|avarkal)\b",)
 
 # When a romanised word counts as the CRM name. Edits allowed grow with the
 # name's length: "rajana"/"rajan" (1 edit, 5 letters) and "manjunaf"/"manjunath"

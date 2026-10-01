@@ -43,7 +43,7 @@ from .models import (
     ProductInfo,
     RepInfo,
 )
-from .transcript import SOURCE_DEEPGRAM
+from .transcript import AUDIO_SOURCES
 
 # Framework requirement names. Declared in sales_framework.json; satisfied here.
 REQ_VOCAL_TONE = "vocal_tone"
@@ -175,7 +175,7 @@ def satisfied_requirements(ctx: AnalysisContext,
     satisfied: set[str] = set()
 
     # Tone, energy and interruption only exist in audio-derived transcripts.
-    if transcript.source == SOURCE_DEEPGRAM and transcript.timestamps_available:
+    if transcript.source in AUDIO_SOURCES and transcript.timestamps_available:
         satisfied.add(REQ_VOCAL_TONE)
 
     profile = ctx.customer.profile or {}

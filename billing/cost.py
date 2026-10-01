@@ -7,6 +7,9 @@ THE RULES
                Deepgram bills total processed audio: a 10-minute file processed
                as 2 channels is 20 minutes. Channels sent WITHOUT multichannel
                are merged into one stream, billed per the config rule.
+    Sarvam     inr = audio_seconds / 3600 x rate_per_hour_inr (with or without
+               diarization); usd = inr / fx.usd_to_inr. Sarvam bills in rupees,
+               so the rupee figure is the exact one and usd is derived.
     Gemini     usd = [(input - cached) x input_rate + cached x cached_rate
                       + (output + thinking) x output_rate] / 1,000,000
                Thinking tokens are billed at the output rate. prompt_token_count
@@ -54,6 +57,7 @@ NOTE_DEEPGRAM_RATE_UNCONFIRMED = "deepgram_rate_unconfirmed"
 NOTE_BILLED_CHANNELS_UNCONFIRMED = "billed_channels_unconfirmed"
 NOTE_GEMINI_RATE_UNCONFIRMED = "gemini_rate_unconfirmed"
 NOTE_GEMINI_ALIAS_UNCONFIRMED = "gemini_alias_unconfirmed"
+NOTE_SARVAM_RATE_UNCONFIRMED = "sarvam_rate_unconfirmed"
 NOTE_FX_FIXED_RATE = "fx_fixed_rate"
 NOTE_FX_NOT_CONFIGURED = "fx_rate_not_configured"
 NOTE_BACKFILLED = "backfilled_from_stored_usage_assumed_1_channel"
@@ -61,7 +65,7 @@ NOTE_BACKFILLED = "backfilled_from_stored_usage_assumed_1_channel"
 _UNCONFIRMED_NOTES = {
     NOTE_DEEPGRAM_RATE_UNCONFIRMED, NOTE_BILLED_CHANNELS_UNCONFIRMED,
     NOTE_GEMINI_RATE_UNCONFIRMED, NOTE_GEMINI_ALIAS_UNCONFIRMED,
-    NOTE_FX_NOT_CONFIGURED, NOTE_BACKFILLED,
+    NOTE_FX_NOT_CONFIGURED, NOTE_BACKFILLED, NOTE_SARVAM_RATE_UNCONFIRMED,
 }
 
 
@@ -104,9 +108,23 @@ class GeminiCost(BaseModel):
     reason: Optional[str] = None
 
 
+class SarvamCost(BaseModel):
+    charged: bool = False
+    model: Optional[str] = None
+    diarization: bool = True
+    audio_seconds: Optional[float] = None
+    rate_per_hour_inr: Optional[float] = None
+    rate_confirmed: Optional[bool] = None
+    rate_effective_from: Optional[str] = None
+    inr: Optional[float] = None
+    usd: Optional[float] = None
+    reason: Optional[str] = None
+
+
 class CostBreakdown(BaseModel):
     deepgram: DeepgramCost = Field(default_factory=DeepgramCost)
     gemini: GeminiCost = Field(default_factory=GeminiCost)
+    sarvam: SarvamCost = Field(default_factory=SarvamCost)
     total_usd: Optional[float] = None
     priced_usd_partial: float = 0.0
     usd_to_inr: Optional[float] = None
@@ -179,6 +197,41 @@ def deepgram_cost(pricing: dict, *, outcome: str, reason: Optional[str] = None,
     return cost
 
 
+def sarvam_cost(pricing: dict, *, outcome: str, reason: Optional[str] = None,
+                model: Optional[str], audio_seconds: Optional[float],
+                diarization: bool = True, at: Any = None) -> SarvamCost:
+    """Cost of one Sarvam transcription. `outcome` is CHARGED, NOT_CHARGED or CHARGE_UNKNOWN."""
+    cost = SarvamCost(model=model, diarization=diarization, audio_seconds=audio_seconds)
+    if outcome == NOT_CHARGED:
+        cost.inr = cost.usd = 0.0
+        cost.reason = reason or REASON_NO_TRANSCRIPTION
+        return cost
+    cost.charged = True
+    if outcome == CHARGE_UNKNOWN:
+        cost.reason = reason or REASON_TRANSCRIPTION_FAILED_UNKNOWN
+        return cost
+    period, why = resolve_rate(pricing, "sarvam", model, at)
+    if period is not None:
+        cost.rate_per_hour_inr = period["rates"].get("batch_diarized" if diarization else "batch")
+        cost.rate_confirmed = bool(period["confirmed"])
+        cost.rate_effective_from = period["effective_from"]
+    if audio_seconds is None:
+        cost.reason = REASON_USAGE_NOT_REPORTED
+        return cost
+    if period is None:
+        cost.reason = why
+        return cost
+    if cost.rate_per_hour_inr is None:
+        cost.reason = REASON_RATE_UNCONFIRMED_NULL
+        return cost
+    cost.inr = round(float(audio_seconds) / 3600.0 * cost.rate_per_hour_inr, 4)
+    fx = (pricing.get("fx") or {}).get("usd_to_inr")
+    cost.usd = _round6(cost.inr / fx) if fx else None
+    if cost.usd is None:
+        cost.reason = REASON_RATE_UNCONFIRMED_NULL
+    return cost
+
+
 def gemini_cost(pricing: dict, *, model_requested: Optional[str],
                 model_version: Optional[str] = None, attempts: int = 0,
                 input_tokens: Optional[int] = None, output_tokens: Optional[int] = None,
@@ -236,9 +289,11 @@ def gemini_cost(pricing: dict, *, model_requested: Optional[str],
 
 
 def combine(pricing: dict, deepgram: DeepgramCost, gemini: GeminiCost, *,
-            at: Any = None, backfilled: bool = False) -> CostBreakdown:
+            at: Any = None, backfilled: bool = False,
+            sarvam: Optional[SarvamCost] = None) -> CostBreakdown:
     """One run's breakdown, with every estimate and unconfirmed value named."""
-    parts = (deepgram, gemini)
+    sarvam = sarvam or SarvamCost(usd=0.0, inr=0.0, reason=REASON_NO_TRANSCRIPTION)
+    parts = (deepgram, gemini, sarvam)
     unpriced = any(part.charged and part.usd is None for part in parts)
     partial = round(sum(part.usd or 0.0 for part in parts), 6)
     total = None if unpriced else partial
@@ -248,6 +303,9 @@ def combine(pricing: dict, deepgram: DeepgramCost, gemini: GeminiCost, *,
 
     notes: list[str] = []
     for part in parts:
+        # An unused Sarvam block is not news on a Deepgram run.
+        if part is sarvam and not sarvam.charged:
+            continue
         if part.reason and part.reason not in notes:
             notes.append(part.reason)
     if deepgram.charged and deepgram.rate_confirmed is False:
@@ -258,6 +316,8 @@ def combine(pricing: dict, deepgram: DeepgramCost, gemini: GeminiCost, *,
         notes.append(NOTE_GEMINI_RATE_UNCONFIRMED)
     if gemini.charged and gemini.alias_confirmed is False:
         notes.append(NOTE_GEMINI_ALIAS_UNCONFIRMED)
+    if sarvam.charged and sarvam.rate_confirmed is False:
+        notes.append(NOTE_SARVAM_RATE_UNCONFIRMED)
     if fx is None:
         notes.append(NOTE_FX_NOT_CONFIGURED)
     elif fx_cfg.get("fixed_rate", True):
@@ -269,6 +329,7 @@ def combine(pricing: dict, deepgram: DeepgramCost, gemini: GeminiCost, *,
     return CostBreakdown(
         deepgram=deepgram,
         gemini=gemini,
+        sarvam=sarvam,
         total_usd=total,
         priced_usd_partial=partial,
         usd_to_inr=fx,

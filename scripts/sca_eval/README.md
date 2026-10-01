@@ -262,3 +262,33 @@ Clips now read up to 1 s into the silence after a turn, stopping 0.25 s before t
 turn. Right up to the next turn, the clip caught its first syllable ("आप-"). Gemini now
 gets the call's names too. On the real call that fixed "ScaleCRM" → ScaleSerum, with no
 names forced onto other words.
+
+## Sarvam clean-up — 2026-10-01 (standalone, not in the analyzer)
+
+`transcription/sarvam_cleanup.py` (free), `sarvam_recheck.py` (Gemini, optional),
+`sarvam_client.py`. Nothing in `sales_call_analyzer/` imports them yet; a unit test
+checks that. Run with `sarvam_cleanup_test.py` (`--recheck`, `--synthetic`).
+
+| Step | What | How |
+|---|---|---|
+| 1 echoes | short fragment of the other speaker's longer turn, same words at the same moment (±1–2 s) | removed |
+| 2 scripts | letters in a foreign Indic script (Odia "ହଁ" on a Marathi call) | transliterated to the call's script |
+| 3 brand | sound-alike of a CRM brand/product term | replaced when close or in context ("from", ".ai", "मधून"); else flagged |
+| 4 product terms | near-miss of a per-brand vocabulary word | flagged only; Gemini re-checks those clips |
+
+Person names are never rewritten (CRM names are often placeholders).
+
+**Synthetic, 19 calls with truth** — nothing worse; the re-check fixed all 14 "Scale CRM":
+
+| | rep WER | cust WER | all WER | role acc | backchannel |
+|---|---|---|---|---|---|
+| Sarvam | 11.8% | 15.9% | 10.6% | 94.9% | 73.5% |
+| + clean-up | 11.8% | 15.9% | 10.6% | 94.9% | 73.5% |
+| + re-check | 10.9% | 15.7% | 10.0% | 94.9% | 73.5% |
+
+Re-check cost: ~Rs 0.31 per call (most of it thinking tokens).
+
+**Real calls mycall7–9** — every listed weakness fixed: brand (13 mishearings → Lawtorney),
+JTPT → ChatGPT, free fund → refund, Child version → trial version, Chromebook → prompt
+book, Gartol → our tool, Odia/Gujarati stray words, 15 echoes. Re-check Rs 0.23–0.62/call.
+Not yet measured against a human-labelled reference for these calls.
