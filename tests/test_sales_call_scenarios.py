@@ -165,7 +165,7 @@ def deps_for(store, *, deepgram=TWO_SPEAKER, llm=None, transcribe=None,
         store=store, llm_client=FakeClient(llm or []), llm_model="gemini-test",
         transcribe=transcribe or fake_transcribe,
         load_brand_brain=load_brand_brain, resolve_brand_ref=resolve_brand_ref,
-        transcription_model="nova-test")
+        transcription_model="nova-test", transcriber=pl.TRANSCRIBER_DEEPGRAM)
     d.extra["calls"] = calls
     return d
 

@@ -77,7 +77,8 @@ def wired(cfg, monkeypatch):
         return pl.PipelineDeps(
             store=store, llm_client=state["llm"], llm_model="gemini-test",
             transcribe=fake_transcribe, load_brand_brain=fake_brand_brain,
-            resolve_brand_ref=fake_brand_ref, transcription_model="nova-test")
+            resolve_brand_ref=fake_brand_ref, transcription_model="nova-test",
+            transcriber=pl.TRANSCRIBER_DEEPGRAM)
 
     monkeypatch.setattr(app_module, "_sales_call_deps", deps)
     state["store"] = store

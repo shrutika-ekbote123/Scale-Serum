@@ -97,10 +97,20 @@ def _generic(run: str) -> str:
     return "".join(out)
 
 
+# Malayalam chillu letters (a consonant with no vowel, written as one sign) are
+# not in sanscript's table and came through untouched: "ഞാൻ" -> "naൻ". Each is
+# its consonant + virama, which sanscript does know.
+_CHILLU = str.maketrans({"ൺ": "ണ്", "ൻ": "ന്",
+                         "ർ": "ര്", "ൽ": "ല്",
+                         "ൾ": "ള്", "ൿ": "ക്"})
+
+
 @lru_cache(maxsize=4096)
 def _run_to_latin(run: str, scheme: str) -> str:
     if scheme == "generic":
         return _generic(run)
+    if scheme == "malayalam":
+        run = run.translate(_CHILLU)
     try:
         from indic_transliteration import sanscript
         return sanscript.transliterate(run, scheme, sanscript.IAST)

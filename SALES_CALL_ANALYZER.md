@@ -148,6 +148,17 @@ SCA_TONE=shadow                # how it was said; `on` once it looks right
 
 Verify: `.speaker_refinement.voice_available` is `true`.
 
+**To transcribe with Sarvam AI instead of Deepgram ([4.9](#49-transcription-provider--sarvam-ai)):**
+
+```
+SCA_TRANSCRIBER=sarvam         # default deepgram
+SARVAM_API_KEY=<key>           # the Sarvam account must have credits
+```
+
+`pip install -r requirements.txt` installs `sarvamai`. Verify:
+`.sales_call_analyzer.transcriber` → `{"provider": "sarvam", "sarvam": "configured", ...}`.
+Keep `DEEPGRAM_API_KEY` set: a call whose Sarvam job fails is transcribed by Deepgram.
+
 ### 3.3 Recordings must be reachable by Deepgram 🟡
 
 Deepgram fetches the audio URL **itself**. It must be publicly reachable or a
@@ -255,6 +266,8 @@ for a 10-minute call.
 |---|---|
 | `rep.name` / `customer.name` | Speaker roles stay `unknown` — never guessed from turn order or talk time |
 | `lead_id` | Brand Brain cannot be resolved; brand-dependent criteria become not-applicable |
+| `brand_name` | Used only when `lead_id` gives no brand. Without any brand, "calling from <brand>" cannot identify the rep, and Sarvam's misspellings of it are not corrected |
+| `product.terms` | Sarvam only: words this product's calls use that may be misheard (`["ChatGPT", "trial version", "refund"]`). A near-miss is re-checked against the audio |
 | `customer.region`, `language`, `designation`, `awareness_level` | Fewer adaptation factors available |
 | `product.price`, `complexity` | Pitch cannot be judged against the price band |
 | `product.is_structured_programme` | "Explains programme structure" → **not applicable** |
@@ -896,6 +909,29 @@ were listened to, and a `reason` whenever the step did not run. Modes: `off`
 
 ---
 
+### 4.9 Transcription provider — Sarvam AI
+
+`SCA_TRANSCRIBER=sarvam` sends the recording to Sarvam AI (saaras:v3, codemix,
+two speakers) instead of Deepgram. Measured on 19 calls with exact truth: 95% of
+words credited to the right speaker (Deepgram path: 75%); on real human speech
+it was more accurate in 7 of 8 Indian languages (Malayalam is supported too).
+
+What happens to a Sarvam transcript before anything reads it:
+
+| Step | What | Cost |
+|---|---|---|
+| Echoes removed | a short fragment of the other speaker's turn, at the same moment (phone echo) | free |
+| Script fixed | a stray word in a foreign Indic script ("ହଁ" on a Marathi call) is transliterated | free |
+| Brand fixed | sound-alikes of the brand / product name ("Lot Earning" → Lawtorney); only when close, or next to "from", ".ai", "मधून" | free |
+| Re-check | turns with a likely misheard term ("JTPT", "free fund") — Gemini listens to just those clips and corrects only the misheard words | ~₹0.1 per call that has any |
+
+People's names are never rewritten. With Sarvam, Gemini language identification
+and the segment pass do not run (Sarvam handles both); `processing.sarvam`
+records the language, every clean-up change and the re-check. If a Sarvam job
+fails (no credits, outage) the call is transcribed by Deepgram and
+`processing.sarvam.reason` says why. Cost: ₹45 per audio hour —
+`usage.cost.sarvam_inr` and `processing.cost.sarvam`.
+
 ## 5. Backend integration guide
 
 ### What to do when a rep saves a Log Call
@@ -1057,12 +1093,12 @@ The report is self-contained — no joins needed to render it.
 **`status`** ∈ `scored` · `not_applicable` · `unsupported`
 
 ### `evidence[]`
-`segment_index` · `speaker_id` · `start` · `end` · `quote` · `verified`
+`segment_index` · `speaker_id` · `speaker_label` · `start` · `end` · `quote` · `verified`
 
 Timestamps are copied from the transcript, never produced by the model.
 
 ### `transcript`
-`source` (`deepgram` / `supplied_structured` / `supplied_text`) · `language` ·
+`source` (`deepgram` / `sarvam` / `supplied_structured` / `supplied_text`) · `language` ·
 `language_detected` · `multilingual` · `diarization_available` ·
 `timestamps_available` · `speaker_count` · `segment_count` · `duration_seconds` ·
 `word_count` · `speakers[]` · `segments[]` ·
@@ -1079,14 +1115,20 @@ measured 0.39.
 another script ("मेरा नाम राजन है" for Rajan), misspelt ("Scale Serum"), or from a
 Hindi or Marathi introduction ("ScaleSerum se bol raha hoon").
 
-**`speakers[]`** — `speaker_id` · `role` · `name` · `role_basis` ·
+**Show `speaker_label`, score by `role`.** Every speaker has a `label` ("Speaker 1",
+"Speaker 2", in the order they first speak) and every segment and evidence quote
+a `speaker_label`. Display those in the transcript. The scores and coaching are
+about the rep and use `role`; the speaker list says which label is the rep
+("Speaker 2 = sales_rep").
+
+**`speakers[]`** — `speaker_id` · `label` · `role` · `name` · `role_basis` ·
 `role_confidence` · `talk_time_seconds` · `turn_count` · `word_count`
 **`role_basis`** ∈ `rep_voiceprint_match` · `crm_rep_self_introduction` ·
 `crm_customer_name_match` · `crm_customer_name_addressed` ·
 `single_other_speaker_by_elimination` · `supplied_by_caller` · `unresolved`
 **`role`** ∈ `sales_rep` · `customer` · `participant` · `unknown`
 
-**`segments[]`** — `index` · `speaker_id` · `start` · `end` · `text` · `confidence` ·
+**`segments[]`** — `index` · `speaker_id` · `speaker_label` · `start` · `end` · `text` · `confidence` ·
 `text_source` (`gemini_segment_pass` when re-transcribed, else null) · `text_original`
 (Deepgram's words, kept when `text` was replaced)
 

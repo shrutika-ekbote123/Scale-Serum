@@ -54,3 +54,6 @@ boto3>=1.34.0                   # heatmap PNGs to S3, and presigned read URLs
 #                  word counts are null and Cognitive Demand says ocr_unavailable.
 # onnxruntime>=1.17.0
 # pytesseract>=0.3.10
+# Sarvam AI speech-to-text (SCA_TRANSCRIBER=sarvam). Without it a Sarvam run
+# reports sarvam_sdk_missing and falls back to Deepgram.
+sarvamai>=0.1.34

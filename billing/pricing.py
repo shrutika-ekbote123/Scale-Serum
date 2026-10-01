@@ -31,6 +31,7 @@ DEFAULT_PRICING_PATH = os.path.join(PKG_DIR, "pricing.json")
 
 DEEPGRAM_RATE_KEYS = ("monolingual", "multilingual")
 GEMINI_RATE_KEYS = ("input", "output", "cached_input")
+SARVAM_RATE_KEYS = ("batch_diarized", "batch")
 
 REASON_RATE_NOT_CONFIGURED = "rate_not_configured"
 
@@ -156,6 +157,14 @@ def validate_pricing(cfg: Any) -> None:
         raise PricingConfigError("gemini.models must be a non-empty object")
     for name, model in gmodels.items():
         _check_periods((model or {}).get("periods"), f"gemini.models.{name}", GEMINI_RATE_KEYS)
+    # Sarvam is optional: a config without it simply cannot price a Sarvam run.
+    sarvam = cfg.get("sarvam")
+    if sarvam is not None:
+        smodels = sarvam.get("models") if isinstance(sarvam, dict) else None
+        if not isinstance(smodels, dict) or not smodels:
+            raise PricingConfigError("sarvam.models must be a non-empty object")
+        for name, model in smodels.items():
+            _check_periods((model or {}).get("periods"), f"sarvam.models.{name}", SARVAM_RATE_KEYS)
     for alias, periods in (gemini.get("aliases") or {}).items():
         _check_periods(periods, f"gemini.aliases.{alias}", None)
         for i, period in enumerate(periods):

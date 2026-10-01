@@ -188,6 +188,15 @@ SCA_TONE_MODEL = os.environ.get("SCA_TONE_MODEL") or GEMINI_MODEL
 # Speaker refinement against voices and rep voiceprints: off | shadow | on.
 # Off by default - it costs ~27 s of CPU per 10-minute call in this process.
 SCA_SPEAKER_REFINE = os.environ.get("SCA_SPEAKER_REFINE", "off").strip().lower()
+# Which provider transcribes call audio: deepgram (default) | sarvam. With
+# sarvam, Gemini language identification and the segment pass are skipped and
+# Sarvam's transcript is cleaned (transcription/sarvam_cleanup.py), with the
+# few flagged turns re-checked by Gemini (SCA_SARVAM_RECHECK, default on).
+# A failed Sarvam job falls back to Deepgram. See sales_call_analyzer/pipeline.py.
+SCA_TRANSCRIBER = os.environ.get("SCA_TRANSCRIBER", "deepgram").strip().lower()
+SCA_SARVAM_RECHECK = os.environ.get("SCA_SARVAM_RECHECK", "on").strip().lower()
+SCA_SARVAM_RECHECK_MODEL = os.environ.get("SCA_SARVAM_RECHECK_MODEL") or GEMINI_MODEL
+SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY")
 # Kept in step with the transcription client below, which owns the real
 # default; billing prices whatever was actually sent.
 DEEPGRAM_MODEL = os.environ.get("DEEPGRAM_MODEL", "nova-3")
@@ -206,6 +215,8 @@ try:
                                             VoiceprintEnrolRequest)
     from transcription import audio_slice as _sca_audio_slice
     from transcription import language_id as _sca_language_id
+    from transcription import sarvam_client as _sca_sarvam
+    from transcription import sarvam_recheck as _sca_sarvam_rc
     from transcription import segment_transcribe as _sca_segment
     from transcription import voice as _sca_voice
 
@@ -691,6 +702,14 @@ async def health():
         "sales_call_analyzer": {
             "available": SALES_CALL_ANALYZER_AVAILABLE,
             "transcription": "configured" if DEEPGRAM_API_KEY else "not_configured",
+            # Which provider transcribes. Sarvam falls back to Deepgram on failure.
+            "transcriber": {
+                "provider": SCA_TRANSCRIBER,
+                "sarvam": "configured" if SARVAM_API_KEY else "not_configured",
+                "sarvam_model": (_sca_sarvam.MODEL if SALES_CALL_ANALYZER_AVAILABLE else None),
+                "recheck": {"mode": SCA_SARVAM_RECHECK,
+                            "model": SCA_SARVAM_RECHECK_MODEL if SCA_SARVAM_RECHECK != "off" else None},
+            },
             "storage": "configured" if sales_call_store is not None else "not_configured",
             # ffmpeg only trims a sample for language identification. Without it
             # the whole (short) recording is sent instead, so this is degraded,
@@ -1532,6 +1551,17 @@ async def _sca_segment_transcribe(clips, language, keyterms=None):
                                                keyterms=keyterms)
 
 
+async def _sca_sarvam_transcribe(audio: bytes, *, filename: str = "call.mp3"):
+    """One call through Sarvam's batch API (transcription/sarvam_client.py)."""
+    return await _sca_sarvam.transcribe(audio, filename=filename, api_key=SARVAM_API_KEY)
+
+
+async def _sca_sarvam_recheck(samples, entries, indices, terms, brand_terms):
+    """Gemini listens again to the turns the Sarvam clean-up flagged."""
+    return await _sca_sarvam_rc.recheck(client, SCA_SARVAM_RECHECK_MODEL, samples, entries,
+                                             indices, terms, brand_terms=brand_terms)
+
+
 async def _sca_identify_language(audio: bytes, *, mime_type: str = "audio/mpeg"):
     """Which languages are spoken in this audio. Uses the shared Gemini client.
 
@@ -1565,6 +1595,11 @@ def _sales_call_deps():
         classify_tone=_sca_classify_tone,
         tone_mode=SCA_TONE,
         tone_model=SCA_TONE_MODEL,
+        transcriber=SCA_TRANSCRIBER,
+        sarvam_transcribe=_sca_sarvam_transcribe if SARVAM_API_KEY else None,
+        sarvam_recheck=_sca_sarvam_recheck,
+        sarvam_model=_sca_sarvam.MODEL,
+        sarvam_recheck_mode=SCA_SARVAM_RECHECK,
     )
 
 
@@ -1606,7 +1641,10 @@ async def analyze_sales_call(body: AnalyzeRequest, background: BackgroundTasks):
         framework_version=cfg["framework_version"],
         prompt_version=_sca_pipeline.analyzer_mod.PROMPT_VERSION,
         llm_model=GEMINI_MODEL,
-        transcription_model=DEEPGRAM_MODEL,
+        # The provider is part of "the same analysis": switching SCA_TRANSCRIBER
+        # must give a new transcript, not hand back the other provider's report.
+        transcription_model=(f"sarvam:{_sca_sarvam.MODEL}" if SCA_TRANSCRIBER == "sarvam"
+                             else DEEPGRAM_MODEL),
     )
 
     # Already analysed, or already running? Hand back what exists.

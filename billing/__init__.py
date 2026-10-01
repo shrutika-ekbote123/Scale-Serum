@@ -26,6 +26,7 @@ from .cost import (  # noqa: F401
     NOTE_FX_NOT_CONFIGURED,
     NOTE_GEMINI_ALIAS_UNCONFIRMED,
     NOTE_GEMINI_RATE_UNCONFIRMED,
+    NOTE_SARVAM_RATE_UNCONFIRMED,
     REASON_NO_LLM_CALL,
     REASON_NO_TRANSCRIPTION,
     REASON_RATE_UNCONFIRMED_NULL,
@@ -36,9 +37,11 @@ from .cost import (  # noqa: F401
     CostBreakdown,
     DeepgramCost,
     GeminiCost,
+    SarvamCost,
     combine,
     deepgram_cost,
     gemini_cost,
+    sarvam_cost,
 )
 from .pricing import (  # noqa: F401
     REASON_RATE_NOT_CONFIGURED,
